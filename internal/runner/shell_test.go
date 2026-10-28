@@ -122,6 +122,29 @@ func TestScriptsStartTheListenerOnceWithTheBlobInItsEnvironment(t *testing.T) {
 	}
 }
 
+// A tail that follows slowly (polling, busybox, inotify exhausted) must not
+// cost the markers of a runner that exits soon after printing them.
+func TestScriptsDeliverEveryMarkerWhateverTailFollowDoes(t *testing.T) {
+	g := newShellGuest(t, fmt.Sprintf(listenerSource, "0.2", "0.2", 0))
+	realTail, err := exec.LookPath("tail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shim := t.TempDir()
+	body := fmt.Sprintf("#!/bin/sh\ncase \" $* \" in *\" -f \"*) exec sleep 30;; esac\nexec %s \"$@\"\n", realTail)
+	if err := os.WriteFile(filepath.Join(shim, "tail"), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	g.path = shim + string(os.PathListSeparator) + g.path
+	hl := &hookLog{}
+	if code, err := runShell(t, g, hl); code != 0 || err != nil {
+		t.Fatalf("= %d, %v; want 0, nil", code, err)
+	}
+	if got := strings.Join(hl.list(), ","); got != "listening,running" {
+		t.Errorf("hooks = %s", got)
+	}
+}
+
 func TestScriptsReportTheListenerExitCode(t *testing.T) {
 	g := newShellGuest(t, fmt.Sprintf(listenerSource, "0.1", "0.1", 7))
 	code, err := runShell(t, g, &hookLog{})

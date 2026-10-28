@@ -211,15 +211,22 @@ func followScript(dir string) string {
 }
 
 // followBody streams the log until the runner exits and exits with its code,
-// or 255 when it died without leaving one.
+// or 255 when it died without leaving one. The log is copied by offset, not
+// with tail -f, so the drain after the exit is complete however tail polls.
 const followBody = `while [ ! -s runner.pid ]; do sleep 0.1; done
 p=$(cat runner.pid)
-tail -n +1 -f runner.log &
-t=$!
-while [ ! -e runner.exit ] && kill -0 "$p" 2>/dev/null; do sleep 0.2; done
-sleep 0.3
-kill "$t" 2>/dev/null
-wait "$t" 2>/dev/null
+off=0
+drain() {
+  n=$(( $(wc -c < runner.log 2>/dev/null) ))
+  if [ "$n" -gt "$off" ]; then tail -c +"$((off + 1))" runner.log | head -c "$((n - off))"; off=$n; fi
+}
+while :; do
+  fin=
+  if [ -e runner.exit ] || ! kill -0 "$p" 2>/dev/null; then fin=1; fi
+  drain
+  [ -n "$fin" ] && break
+  sleep 0.2
+done
 exit "$(cat runner.exit 2>/dev/null || echo 255)"
 `
 
