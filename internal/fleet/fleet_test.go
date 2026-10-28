@@ -19,10 +19,10 @@ import (
 func testConfig() config.Autoscaler {
 	return config.Autoscaler{
 		MaxInstances:                4,
-		UpdateInterval:              30 * time.Millisecond,
-		UpdateIntervalWhenExpecting: 10 * time.Millisecond,
-		DeletionRetryInterval:       30 * time.Millisecond,
-		ShutdownDeletionInterval:    10 * time.Millisecond,
+		UpdateInterval:              config.Duration(30 * time.Millisecond),
+		UpdateIntervalWhenExpecting: config.Duration(10 * time.Millisecond),
+		DeletionRetryInterval:       config.Duration(30 * time.Millisecond),
+		ShutdownDeletionInterval:    config.Duration(10 * time.Millisecond),
 		DeleteInstancesOnShutdown:   true,
 	}
 }

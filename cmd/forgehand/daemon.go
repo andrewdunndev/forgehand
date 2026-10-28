@@ -145,9 +145,9 @@ func (d *daemon) start(ctx context.Context, cfg config.ScaleSet, metrics prometh
 	}
 	u.scaler = scaler.New(scaler.Config{
 		MaxInstances:           cfg.Autoscaler.MaxInstances,
-		ListenTimeout:          cfg.Runner.ListenTimeout,
-		IdleRunnerTimeout:      cfg.Runner.IdleRunnerTimeout,
-		InstanceAcquireTimeout: cfg.Autoscaler.InstanceAcquireTimeout,
+		ListenTimeout:          time.Duration(cfg.Runner.ListenTimeout),
+		IdleRunnerTimeout:      time.Duration(cfg.Runner.IdleRunnerTimeout),
+		InstanceAcquireTimeout: time.Duration(cfg.Autoscaler.InstanceAcquireTimeout),
 		Logger:                 log,
 		Now:                    d.now,
 	}, u.sessions, api, u.fleet, d.deps.newRunner(cfg, api, set.ID, log))

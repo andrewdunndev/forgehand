@@ -33,10 +33,10 @@ func testConfig(shutdown int) *config.Config {
 			Name:   "example",
 			URL:    "https://github.com/example/example",
 			Labels: []string{"self-hosted", "example"},
-			Runner: config.Runner{ListenTimeout: time.Minute, IdleRunnerTimeout: time.Minute},
+			Runner: config.Runner{ListenTimeout: config.Duration(time.Minute), IdleRunnerTimeout: config.Duration(time.Minute)},
 			Autoscaler: config.Autoscaler{
 				MaxInstances:           2,
-				InstanceAcquireTimeout: time.Minute,
+				InstanceAcquireTimeout: config.Duration(time.Minute),
 			},
 		}},
 	}
@@ -353,10 +353,10 @@ func TestPreexistingAndUnexpectedInstancesAreDeletedWithTheirRunners(t *testing.
 	r.d.deps.startFleet = func(_ config.Autoscaler, o fleet.Options) (fleet.Fleet, error) {
 		return fleet.New(group, config.Autoscaler{
 			MaxInstances:                2,
-			UpdateInterval:              30 * time.Millisecond,
-			UpdateIntervalWhenExpecting: 10 * time.Millisecond,
-			DeletionRetryInterval:       30 * time.Millisecond,
-			ShutdownDeletionInterval:    10 * time.Millisecond,
+			UpdateInterval:              config.Duration(30 * time.Millisecond),
+			UpdateIntervalWhenExpecting: config.Duration(10 * time.Millisecond),
+			DeletionRetryInterval:       config.Duration(30 * time.Millisecond),
+			ShutdownDeletionInterval:    config.Duration(10 * time.Millisecond),
 			DeleteInstancesOnShutdown:   true,
 		}, o, taskscaler.WithAcquireDelay(5*time.Millisecond))
 	}
@@ -400,10 +400,10 @@ func TestMetricsEndpointServesTheFleetCollectors(t *testing.T) {
 	group := &dummy.InstanceGroup{MaxSize: 2}
 	fl, err := fleet.New(group, config.Autoscaler{
 		MaxInstances:                2,
-		UpdateInterval:              30 * time.Millisecond,
-		UpdateIntervalWhenExpecting: 10 * time.Millisecond,
-		DeletionRetryInterval:       30 * time.Millisecond,
-		ShutdownDeletionInterval:    10 * time.Millisecond,
+		UpdateInterval:              config.Duration(30 * time.Millisecond),
+		UpdateIntervalWhenExpecting: config.Duration(10 * time.Millisecond),
+		DeletionRetryInterval:       config.Duration(30 * time.Millisecond),
+		ShutdownDeletionInterval:    config.Duration(10 * time.Millisecond),
 		DeleteInstancesOnShutdown:   true,
 	}, fleet.Options{Name: "example", Metrics: reg}, taskscaler.WithAcquireDelay(5*time.Millisecond))
 	if err != nil {

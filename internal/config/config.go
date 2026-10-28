@@ -14,9 +14,9 @@ import (
 const (
 	defaultShutdownTimeout        = 30
 	defaultRunnerGroup            = "Default"
-	defaultListenTimeout          = 3 * time.Minute
-	defaultIdleRunnerTimeout      = 5 * time.Minute
-	defaultInstanceAcquireTimeout = 15 * time.Minute
+	defaultListenTimeout          = Duration(3 * time.Minute)
+	defaultIdleRunnerTimeout      = Duration(5 * time.Minute)
+	defaultInstanceAcquireTimeout = Duration(15 * time.Minute)
 	reservedNamePrefix            = "job-"
 )
 
@@ -43,6 +43,21 @@ func (s *Seconds) UnmarshalTOML(v any) error {
 	return nil
 }
 
+type Duration time.Duration
+
+func (d *Duration) UnmarshalTOML(v any) error {
+	str, ok := v.(string)
+	if !ok {
+		return fmt.Errorf("got %v; use a string such as \"3m\"", v)
+	}
+	parsed, err := time.ParseDuration(str)
+	if err != nil {
+		return fmt.Errorf("invalid duration %q; use a string such as \"3m\"", str)
+	}
+	*d = Duration(parsed)
+	return nil
+}
+
 type ScaleSet struct {
 	Name        string     `toml:"name"`
 	URL         string     `toml:"url"`
@@ -60,9 +75,9 @@ type GitHubApp struct {
 }
 
 type Runner struct {
-	Dir               string        `toml:"dir"`
-	ListenTimeout     time.Duration `toml:"listen_timeout"`
-	IdleRunnerTimeout time.Duration `toml:"idle_runner_timeout"`
+	Dir               string   `toml:"dir"`
+	ListenTimeout     Duration `toml:"listen_timeout"`
+	IdleRunnerTimeout Duration `toml:"idle_runner_timeout"`
 }
 
 type Autoscaler struct {
@@ -72,11 +87,11 @@ type Autoscaler struct {
 	Policy                      []Policy        `toml:"policy"`
 	MaxInstances                int             `toml:"max_instances"`
 	InstanceReadyCommand        string          `toml:"instance_ready_command"`
-	InstanceAcquireTimeout      time.Duration   `toml:"instance_acquire_timeout"`
-	UpdateInterval              time.Duration   `toml:"update_interval"`
-	UpdateIntervalWhenExpecting time.Duration   `toml:"update_interval_when_expecting"`
-	DeletionRetryInterval       time.Duration   `toml:"deletion_retry_interval"`
-	ShutdownDeletionInterval    time.Duration   `toml:"shutdown_deletion_interval"`
+	InstanceAcquireTimeout      Duration        `toml:"instance_acquire_timeout"`
+	UpdateInterval              Duration        `toml:"update_interval"`
+	UpdateIntervalWhenExpecting Duration        `toml:"update_interval_when_expecting"`
+	DeletionRetryInterval       Duration        `toml:"deletion_retry_interval"`
+	ShutdownDeletionInterval    Duration        `toml:"shutdown_deletion_interval"`
 	ShutdownDeletionRetries     int             `toml:"shutdown_deletion_retries"`
 	FailureThreshold            int             `toml:"failure_threshold"`
 	ScaleThrottle               ScaleThrottle   `toml:"scale_throttle"`
@@ -84,27 +99,27 @@ type Autoscaler struct {
 }
 
 type ConnectorConfig struct {
-	OS                   string        `toml:"os"`
-	Arch                 string        `toml:"arch"`
-	Protocol             string        `toml:"protocol"`
-	ProtocolPort         int           `toml:"protocol_port"`
-	Username             string        `toml:"username"`
-	Password             string        `toml:"password"`
-	KeyPath              string        `toml:"key_path"`
-	UseStaticCredentials bool          `toml:"use_static_credentials"`
-	Keepalive            time.Duration `toml:"keepalive"`
-	Timeout              time.Duration `toml:"timeout"`
-	UseExternalAddr      bool          `toml:"use_external_addr"`
+	OS                   string   `toml:"os"`
+	Arch                 string   `toml:"arch"`
+	Protocol             string   `toml:"protocol"`
+	ProtocolPort         int      `toml:"protocol_port"`
+	Username             string   `toml:"username"`
+	Password             string   `toml:"password"`
+	KeyPath              string   `toml:"key_path"`
+	UseStaticCredentials bool     `toml:"use_static_credentials"`
+	Keepalive            Duration `toml:"keepalive"`
+	Timeout              Duration `toml:"timeout"`
+	UseExternalAddr      bool     `toml:"use_external_addr"`
 }
 
 type Policy struct {
-	Periods          []string      `toml:"periods"`
-	Timezone         string        `toml:"timezone"`
-	IdleCount        int           `toml:"idle_count"`
-	IdleTime         time.Duration `toml:"idle_time"`
-	ScaleFactor      float64       `toml:"scale_factor"`
-	ScaleFactorLimit int           `toml:"scale_factor_limit"`
-	PreemptiveMode   *bool         `toml:"preemptive_mode"`
+	Periods          []string `toml:"periods"`
+	Timezone         string   `toml:"timezone"`
+	IdleCount        int      `toml:"idle_count"`
+	IdleTime         Duration `toml:"idle_time"`
+	ScaleFactor      float64  `toml:"scale_factor"`
+	ScaleFactorLimit int      `toml:"scale_factor_limit"`
+	PreemptiveMode   *bool    `toml:"preemptive_mode"`
 }
 
 type ScaleThrottle struct {

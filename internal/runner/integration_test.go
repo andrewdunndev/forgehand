@@ -27,10 +27,10 @@ func TestOneJobThroughTaskscalerAndTheDummyPlugin(t *testing.T) {
 	group := &dummy.InstanceGroup{MaxSize: 2}
 	fl, err := fleet.New(group, config.Autoscaler{
 		MaxInstances:                2,
-		UpdateInterval:              30 * time.Millisecond,
-		UpdateIntervalWhenExpecting: 10 * time.Millisecond,
-		DeletionRetryInterval:       30 * time.Millisecond,
-		ShutdownDeletionInterval:    10 * time.Millisecond,
+		UpdateInterval:              config.Duration(30 * time.Millisecond),
+		UpdateIntervalWhenExpecting: config.Duration(10 * time.Millisecond),
+		DeletionRetryInterval:       config.Duration(30 * time.Millisecond),
+		ShutdownDeletionInterval:    config.Duration(10 * time.Millisecond),
 		DeleteInstancesOnShutdown:   true,
 	}, fleet.Options{}, taskscaler.WithAcquireDelay(5*time.Millisecond))
 	if err != nil {

@@ -52,7 +52,7 @@ func TestParseValid(t *testing.T) {
 	if cfg.ShutdownDuration() != 30*time.Second {
 		t.Errorf("shutdown = %v", cfg.ShutdownDuration())
 	}
-	if s.Runner.ListenTimeout != 3*time.Minute || s.Autoscaler.ConnectorConfig.Timeout != 10*time.Minute {
+	if s.Runner.ListenTimeout != Duration(3*time.Minute) || s.Autoscaler.ConnectorConfig.Timeout != Duration(10*time.Minute) {
 		t.Errorf("durations not parsed: %+v %+v", s.Runner, s.Autoscaler.ConnectorConfig)
 	}
 	if s.Autoscaler.NamePrefix() != "job-example-" || s.Autoscaler.MaxInstances != 2 || len(s.Autoscaler.Policy) != 1 {
@@ -75,9 +75,25 @@ func TestParseDefaults(t *testing.T) {
 	}
 	s := cfg.ScaleSets[0]
 	if cfg.ShutdownTimeout != 30 || cfg.LogLevel != "info" || s.RunnerGroup != "Default" ||
-		s.Runner.ListenTimeout != 3*time.Minute || s.Runner.IdleRunnerTimeout != 5*time.Minute ||
-		s.Autoscaler.InstanceAcquireTimeout != 15*time.Minute {
+		s.Runner.ListenTimeout != Duration(3*time.Minute) || s.Runner.IdleRunnerTimeout != Duration(5*time.Minute) ||
+		s.Autoscaler.InstanceAcquireTimeout != Duration(15*time.Minute) {
 		t.Errorf("defaults not applied: %+v", cfg)
+	}
+}
+
+func TestBareIntegerDurationIsRejected(t *testing.T) {
+	for _, key := range []string{"listen_timeout", "idle_runner_timeout", "instance_acquire_timeout", "timeout"} {
+		old := key + " = \""
+		i := strings.Index(valid, old)
+		if i < 0 {
+			t.Fatalf("%s not in the fixture", key)
+		}
+		j := i + len(old) + strings.Index(valid[i+len(old):], "\"") + 1
+		bad := valid[:i] + key + " = 180" + valid[j:]
+		_, err := Parse([]byte(bad))
+		if err == nil || !strings.Contains(err.Error(), `use a string such as "3m"`) {
+			t.Errorf("%s = 180: err = %v", key, err)
+		}
 	}
 }
 
