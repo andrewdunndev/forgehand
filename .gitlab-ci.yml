@@ -23,6 +23,10 @@ variables:
 include:
   - component: gitlab.com/dunn.dev/pipeline/go-lint@4.13.0
   - component: gitlab.com/dunn.dev/pipeline/go-audit@4.13.0
+  - component: gitlab.com/dunn.dev/pipeline/reference-check@4.13.0
+    inputs:
+      reference_ref: main
+      fail_on_violation: true
   - component: gitlab.com/dunn.dev/pipeline/go-build@4.13.0
     inputs:
       job_name: go-build

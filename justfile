@@ -7,3 +7,7 @@ build:
 lint:
     golangci-lint run ./...
     go vet ./...
+
+[doc('regenerate avatar.png and brand.png from the SVGs')]
+brand:
+    bash ~/gitlab.com/dunn.dev/reference/repository/scripts/brand.sh
