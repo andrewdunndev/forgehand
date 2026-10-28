@@ -1,0 +1,58 @@
+# One scale set that runs GitHub Actions jobs for one repository, one VM per job.
+# Required keys are marked "required"; everything else shows its default or is optional.
+
+# trace, debug, info, warn or error.
+log_level = "info"
+
+# Prometheus /metrics. It has no authentication, so keep it on loopback or
+# behind a firewall. Leave the key out to serve no metrics.
+listen_address = "127.0.0.1:9253"
+
+# Integer seconds that SIGTERM waits for shutdown. SIGQUIT drains instead.
+shutdown_timeout = 30
+
+[[scalesets]]
+# required: the scale set name. Created on GitHub at the first run.
+name = "example"
+# required: the repository (or organization) URL the GitHub App is installed on.
+url = "https://github.com/owner/repo"
+# required: workflows select this scale set with runs-on.
+labels = ["self-hosted", "example"]
+
+[scalesets.github_app]
+# required: the App's client ID, its installation ID on the repository, and
+# the path of its private key (PEM). The App needs Administration read and write.
+client_id = "Iv1.0000000000000000"
+installation_id = 12345678
+private_key_path = "/run/credentials/forgehand.service/app.pem"
+
+[scalesets.runner]
+# required: where actions/runner is unpacked in the guest image.
+dir = "/opt/actions-runner"
+
+[scalesets.autoscaler]
+# required: a fleeting plugin, as a binary path, a name on PATH or an OCI reference.
+plugin = "fleeting-plugin-example"
+# required: the most VMs this scale set may hold at once.
+max_instances = 4
+# optional: a command run in the guest over SSH before a VM takes a job.
+instance_ready_command = "true"
+# optional: how long a job waits for a VM before it is given up. Default "15m".
+instance_acquire_timeout = "15m"
+# optional: stop the VMs when forgehand stops.
+delete_instances_on_shutdown = true
+
+# The keys here belong to the plugin; forgehand passes them through untouched.
+[scalesets.autoscaler.plugin_config]
+image = "runner-image"
+
+[scalesets.autoscaler.connector_config]
+protocol = "ssh"
+# required for SSH: the guest user and the private key it trusts.
+username = "runner"
+key_path = "/run/credentials/forgehand.service/guest-ssh"
+timeout = "10m"
+
+# Idle VMs kept warm. idle_count = 0 starts a VM only when a job arrives.
+[[scalesets.autoscaler.policy]]
+idle_count = 0

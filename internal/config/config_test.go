@@ -163,3 +163,14 @@ func TestPluginConfigIsOpaque(t *testing.T) {
 		t.Errorf("a config without plugin_config keys is rejected: %v", err)
 	}
 }
+
+func TestExampleConfigLoads(t *testing.T) {
+	cfg, err := Load("../../examples/forgehand.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := cfg.ScaleSets[0]
+	if len(cfg.ScaleSets) != 1 || s.Autoscaler.ConnectorConfig.Protocol != "ssh" || len(s.Autoscaler.Policy) != 1 || cfg.ListenAddress != "127.0.0.1:9253" {
+		t.Errorf("example config = %+v", cfg)
+	}
+}
