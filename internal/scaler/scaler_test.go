@@ -845,3 +845,39 @@ func TestStopCancelsEverySlotWithinTheBound(t *testing.T) {
 	}
 	r.wantReleased(1)
 }
+
+func TestStopRemovesRegistrationsOfRunnersThatAreNotBusy(t *testing.T) {
+	r := newRig(t)
+	r.assigned(2)
+	r.busy("vm-1")
+	r.waitFor("second Acquire", func() bool { return len(r.fl.Waiting()) == 1 })
+	r.listening("vm-2")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := r.s.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if ref, _ := r.api.GetRunnerByName(ctx, "vm-2"); ref != nil {
+		t.Error("idle runner vm-2 is still registered after Stop")
+	}
+	if ref, _ := r.api.GetRunnerByName(ctx, "vm-1"); ref == nil {
+		t.Error("busy runner vm-1 was removed by Stop")
+	}
+}
+
+func TestStopLogsRegistrationRemovalFailures(t *testing.T) {
+	r := newRig(t)
+	r.assigned(1)
+	r.listening("vm-1")
+	r.api.SetRemoveErr(errors.New("github down"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := r.s.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if got := r.logged(); !strings.Contains(got, "removing runner at stop failed") || !strings.Contains(got, "github down") {
+		t.Errorf("failure not logged:\n%s", got)
+	}
+}
