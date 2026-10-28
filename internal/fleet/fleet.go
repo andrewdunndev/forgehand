@@ -97,6 +97,7 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 	if err != nil {
 		return nil, err
 	}
+	group = removeOnHeartbeatFailure{InstanceGroup: group, log: opts.Logger}
 	ctx, cancel := context.WithCancel(context.Background())
 	tsOpts := append(mapped(cfg, settings, upFunc(ctx, cfg, opts.OnLeftover)), extra...)
 	if opts.Logger != nil {
@@ -169,6 +170,7 @@ func mapped(cfg config.Autoscaler, s provider.Settings, up taskscaler.UpFunc) []
 		taskscaler.WithMaxInstances(cfg.MaxInstances),
 		taskscaler.WithInstanceGroupSettings(s),
 		taskscaler.WithInstanceUpFunc(up),
+		taskscaler.WithHeartbeatFunc(heartbeat),
 		taskscaler.WithUpdateInterval(time.Duration(cfg.UpdateInterval)),
 		taskscaler.WithUpdateIntervalWhenExpecting(time.Duration(cfg.UpdateIntervalWhenExpecting)),
 		taskscaler.WithDeletionRetryInterval(time.Duration(cfg.DeletionRetryInterval)),

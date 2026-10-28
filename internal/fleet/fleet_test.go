@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"sync"
@@ -259,4 +260,55 @@ func TestFakeGrantAndCancel(t *testing.T) {
 	if got := f.Released(); !slices.Equal(got, []string{"a"}) {
 		t.Errorf("released = %v", got)
 	}
+}
+
+// heartbeatGroup fails Heartbeat for the first instance it is asked about.
+type heartbeatGroup struct {
+	provider.InstanceGroup
+	mu  sync.Mutex
+	bad string
+}
+
+func (g *heartbeatGroup) Heartbeat(ctx context.Context, id string) error {
+	g.mu.Lock()
+	if g.bad == "" {
+		g.bad = id
+	}
+	bad := g.bad
+	g.mu.Unlock()
+	if id == bad {
+		return errors.New("guest unhealthy")
+	}
+	return g.InstanceGroup.Heartbeat(ctx, id)
+}
+
+func (g *heartbeatGroup) badID() string {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return g.bad
+}
+
+func TestFailedHeartbeatInstanceIsNeverAcquired(t *testing.T) {
+	dg := &dummy.InstanceGroup{MaxSize: 4}
+	group := &heartbeatGroup{InstanceGroup: dg}
+	cfg := testConfig()
+	f, err := New(group, cfg, Options{}, taskscaler.WithAcquireDelay(5*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		f.Shutdown(ctx)
+	})
+
+	got := acquire(t, f, "a")
+	bad := group.badID()
+	if bad == "" || got.InstanceID() == bad {
+		t.Fatalf("acquired %q, heartbeat-failing instance is %q", got.InstanceID(), bad)
+	}
+	eventually(t, "unhealthy instance removed", func() bool {
+		s := states(dg)[bad]
+		return s == provider.StateDeleting || s == provider.StateDeleted
+	})
 }
