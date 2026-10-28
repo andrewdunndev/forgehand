@@ -45,7 +45,7 @@ func realDeps() deps {
 	host, _ := os.Hostname()
 	return deps{
 		hostname:   host,
-		newAPI:     func(c config.ScaleSet) (github.API, error) { return github.New(c, version) },
+		newAPI:     func(c config.ScaleSet) (github.API, error) { return github.New(c, Version) },
 		startFleet: fleet.Start,
 		newRunner: func(c config.ScaleSet, api github.API, id int, log hclog.Logger) scaler.Runner {
 			return runner.New(c.Runner, c.Autoscaler.ConnectorConfig.UseExternalAddr, api, id, log.Named("runner"))

@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,10 +16,17 @@ import (
 	"gitlab.com/dunn.dev/forgehand/internal/config"
 )
 
-var version = "dev"
+// Version is stamped at build time with -ldflags "-X main.Version=...".
+var Version = "dev"
 
-const usage = `usage: forgehand run -c config.toml
-       forgehand check -c config.toml`
+const usage = `forgehand runs GitHub Actions jobs on single-use virtual machines.
+
+usage:
+  forgehand run -c config.toml     serve the configured scale sets until signalled
+  forgehand check -c config.toml   validate the config, the App and the plugin without starting a VM
+  forgehand version                print the version
+
+-c is the path to the TOML config; see examples/forgehand.toml.`
 
 func main() {
 	os.Exit(execute(os.Args[1:], os.Stdout, os.Stderr))
@@ -29,14 +37,27 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stderr, usage)
 		return 2
 	}
-	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
-	fs.SetOutput(stderr)
-	path := fs.String("c", "", "path to the TOML config")
-	if args[0] != "run" && args[0] != "check" {
+	switch args[0] {
+	case "help", "-h", "--help":
+		_, _ = fmt.Fprintln(stdout, usage)
+		return 0
+	case "version", "--version":
+		_, _ = fmt.Fprintln(stdout, "forgehand", Version)
+		return 0
+	case "run", "check":
+	default:
 		_, _ = fmt.Fprintf(stderr, "forgehand: unknown command %q\n%s\n", args[0], usage)
 		return 2
 	}
-	if err := fs.Parse(args[1:]); err != nil {
+	fs := flag.NewFlagSet(args[0], flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	fs.Usage = func() {}
+	path := fs.String("c", "", "path to the TOML config")
+	switch err := fs.Parse(args[1:]); {
+	case errors.Is(err, flag.ErrHelp):
+		_, _ = fmt.Fprintln(stdout, usage)
+		return 0
+	case err != nil:
 		return 2
 	}
 	if *path == "" {

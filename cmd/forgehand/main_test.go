@@ -47,6 +47,27 @@ func TestExecuteUsage(t *testing.T) {
 	}
 }
 
+func TestExecuteHelpAndVersion(t *testing.T) {
+	for _, args := range [][]string{{"help"}, {"-h"}, {"--help"}, {"run", "-h"}, {"check", "--help"}} {
+		var stdout, stderr bytes.Buffer
+		code := execute(args, &stdout, &stderr)
+		out := stdout.String()
+		if code != 0 || stderr.Len() != 0 || !strings.Contains(out, "forgehand run -c") || !strings.Contains(out, "forgehand check -c") || !strings.Contains(out, "-c is the path") {
+			t.Errorf("%v: code = %d, stdout = %q, stderr = %q", args, code, out, stderr.String())
+		}
+	}
+
+	old := Version
+	Version = "v1.2.3"
+	t.Cleanup(func() { Version = old })
+	for _, args := range [][]string{{"version"}, {"--version"}} {
+		var stdout, stderr bytes.Buffer
+		if code := execute(args, &stdout, &stderr); code != 0 || stdout.String() != "forgehand v1.2.3\n" {
+			t.Errorf("%v: code = %d, stdout = %q", args, code, stdout.String())
+		}
+	}
+}
+
 func checkDaemon(api github.API, err error) *daemon {
 	return newDaemon(testConfig(5), deps{
 		hostname: "testhost",
