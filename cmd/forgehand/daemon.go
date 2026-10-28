@@ -213,7 +213,14 @@ func (d *daemon) run(ctx context.Context, sigs <-chan os.Signal) error {
 	var units []*unit
 	fatal := make(chan error, len(d.cfg.ScaleSets))
 	for _, s := range d.cfg.ScaleSets {
-		u, err := d.start(ctx, s, metrics)
+		u, interrupted, err := d.starting(ctx, s, metrics, sigs, cancel)
+		if interrupted != nil {
+			d.log.Info("signal received during startup", "signal", interrupted)
+			if u != nil {
+				units = append(units, u)
+			}
+			return d.stop(units, cancel)
+		}
 		if err != nil {
 			d.stop(units, cancel)
 			return fmt.Errorf("scaleset %q: %w", s.Name, err)
@@ -240,6 +247,32 @@ func (d *daemon) run(ctx context.Context, sigs <-chan os.Signal) error {
 		err = stopErr
 	}
 	return err
+}
+
+// starting runs start while watching for a signal. A signal cancels the start
+// and waits up to shutdown_timeout for it to return.
+func (d *daemon) starting(ctx context.Context, cfg config.ScaleSet, metrics prometheus.Registerer, sigs <-chan os.Signal, cancel context.CancelFunc) (*unit, os.Signal, error) {
+	type result struct {
+		u   *unit
+		err error
+	}
+	res := make(chan result, 1)
+	go func() {
+		u, err := d.start(ctx, cfg, metrics)
+		res <- result{u, err}
+	}()
+	select {
+	case r := <-res:
+		return r.u, nil, r.err
+	case sig := <-sigs:
+		cancel()
+		select {
+		case r := <-res:
+			return r.u, sig, nil
+		case <-time.After(d.cfg.ShutdownDuration()):
+			return nil, sig, nil
+		}
+	}
 }
 
 // serveMetrics serves the taskscaler and fleeting collectors on listen_address

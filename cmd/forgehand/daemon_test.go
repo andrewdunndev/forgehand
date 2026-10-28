@@ -308,6 +308,36 @@ func TestSIGTERMStopsInsideShutdownTimeoutAndKillsJobs(t *testing.T) {
 	}
 }
 
+// hangingAPI blocks scale set lookup until its context is cancelled.
+type hangingAPI struct{ *github.Fake }
+
+func (hangingAPI) GetRunnerScaleSet(ctx context.Context, _ int, _ string) (*scaleset.RunnerScaleSet, error) {
+	<-ctx.Done()
+	return nil, ctx.Err()
+}
+
+func TestSIGTERMDuringStartupStopsInsideShutdownTimeout(t *testing.T) {
+	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
+		r := newRig(t, testConfig(1))
+		r.d.deps.newAPI = func(config.ScaleSet) (github.API, error) { return hangingAPI{r.api}, nil }
+		r.start()
+		time.Sleep(50 * time.Millisecond)
+
+		began := time.Now()
+		r.sigs <- sig
+		err, ok := r.result(5 * time.Second)
+		if !ok || err != nil {
+			t.Fatalf("%v: run = %v (returned %v)\nlog:\n%s", sig, err, ok, r.out.String())
+		}
+		if took := time.Since(began); took > 2*time.Second {
+			t.Errorf("%v: startup stop took %s with shutdown_timeout 1", sig, took)
+		}
+		if n, _ := r.fleetOptions(); n != 0 {
+			t.Errorf("%v: fleet started %d times after the signal", sig, n)
+		}
+	}
+}
+
 func TestListenerReconnectsWithTheSameOwner(t *testing.T) {
 	r := newRig(t, testConfig(5))
 	r.api.Session.Errs = []error{errors.New("session evicted")}
