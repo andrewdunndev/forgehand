@@ -17,13 +17,63 @@ and any fleeting plugin should fit.
 
 ## Status
 
-Pre-release. The tests take one job end to end against fleeting's dummy plugin;
-nothing has run on real hardware yet, and the configuration schema is still
-changing. Issues and merge requests go to
-[GitLab](https://gitlab.com/dunn.dev/forgehand); a GitHub mirror may come later.
+Pre-release. The tests take one job end to end against fleeting's dummy plugin,
+but forgehand has not yet run against real GitHub and a real VM. The
+configuration schema is still changing.
 
-Build with `mise install && just build`; test with `just test`.
+## Prerequisites
+
+- A GitHub App installed on the repository or organization, with Administration
+  read and write. You need its client ID, its installation ID and a private key.
+- A fleeting plugin for your hypervisor or cloud, installed on the host.
+- A guest image with:
+  - POSIX `sh` and `setsid`
+  - [actions/runner](https://github.com/actions/runner) unpacked at `runner.dir`
+  - SSH reachable from the host, for the user and key in `connector_config`
+
+## Install
+
+```
+go install gitlab.com/dunn.dev/forgehand/cmd/forgehand@latest
+```
+
+Or build from source with `mise install && just build`, which writes
+`bin/forgehand`.
+
+## Quickstart
+
+```
+curl -O https://gitlab.com/dunn.dev/forgehand/-/raw/main/examples/forgehand.toml
+$EDITOR forgehand.toml
+forgehand check -c forgehand.toml
+forgehand run -c forgehand.toml
+```
+
+`check` resolves the plugin, finds both key files and authenticates the App, then
+prints `ok` when `run` will start. It creates nothing and starts no VM.
+[`examples/forgehand.toml`](examples/forgehand.toml) comments each required key;
+[`examples/forgehand.service`](examples/forgehand.service) is a hardened systemd unit.
+
+## Signals
+
+- `SIGQUIT` drains: idle runners are removed and running jobs finish before the
+  daemon exits. `SIGTERM` or `SIGINT` during a drain ends it and stops within `shutdown_timeout`.
+- `SIGTERM` and `SIGINT` stop within `shutdown_timeout` seconds, running jobs
+  included.
+
+## Metrics
+
+With `listen_address` set, forgehand serves Prometheus `/metrics` there. The
+endpoint has no authentication, so bind it to loopback or firewall it.
+
+## Contributing
+
+Issues and merge requests go to [GitLab](https://gitlab.com/dunn.dev/forgehand).
+See [CONTRIBUTING.md](CONTRIBUTING.md); report vulnerabilities as
+[SECURITY.md](SECURITY.md) describes.
 
 ## License
 
 [MIT](LICENSE).
+
+Built by Andrew Dunn, 2026.
