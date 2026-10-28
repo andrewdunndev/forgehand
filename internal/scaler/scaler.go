@@ -64,6 +64,7 @@ type Config struct {
 	IdleRunnerTimeout      time.Duration
 	InstanceAcquireTimeout time.Duration
 	Logger                 hclog.Logger
+	Now                    func() time.Time
 }
 
 // Scaler implements listener.Scaler. One slot holds one VM for one job.
@@ -96,6 +97,10 @@ func New(cfg Config, client Acquirer, registry Registry, fl fleet.Fleet, runner 
 	if log == nil {
 		log = hclog.NewNullLogger()
 	}
+	now := cfg.Now
+	if now == nil {
+		now = time.Now
+	}
 	return &Scaler{
 		cfg:      cfg,
 		client:   client,
@@ -103,7 +108,7 @@ func New(cfg Config, client Acquirer, registry Registry, fl fleet.Fleet, runner 
 		fleet:    fl,
 		runner:   runner,
 		log:      log,
-		now:      time.Now,
+		now:      now,
 		tick:     tickInterval,
 		slots:    map[string]*slot{},
 		drained:  make(chan struct{}),
@@ -139,7 +144,7 @@ func (s *Scaler) Scale(ctx context.Context, msg *scaleset.RunnerScaleSetMessage)
 			s.jobStarted(j.RunnerName)
 		}
 		for _, j := range msg.JobCompletedMessages {
-			s.jobCompleted(j.RunnerName)
+			s.jobCompleted(j)
 		}
 	}
 	for _, sl := range s.slots {
@@ -415,7 +420,9 @@ func (s *Scaler) jobStarted(name string) {
 	s.move(sl, Busy)
 }
 
-func (s *Scaler) jobCompleted(name string) {
+func (s *Scaler) jobCompleted(j *scaleset.JobCompleted) {
+	name := j.RunnerName
+	s.log.Info("job completed", "runner", name, "result", j.Result)
 	sl := s.find(name)
 	if sl == nil || sl.state.Terminal() || sl.state == Starting {
 		s.log.Debug("ignoring JobCompleted", "runner", name)

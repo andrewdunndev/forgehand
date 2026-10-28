@@ -62,6 +62,7 @@ type daemon struct {
 	sweepInterval              time.Duration
 	sweepAttempts              int
 	metricsAddr                string
+	now                        func() time.Time
 }
 
 func newDaemon(cfg *config.Config, d deps, log hclog.Logger) *daemon {
@@ -148,6 +149,7 @@ func (d *daemon) start(ctx context.Context, cfg config.ScaleSet, metrics prometh
 		IdleRunnerTimeout:      cfg.Runner.IdleRunnerTimeout,
 		InstanceAcquireTimeout: cfg.Autoscaler.InstanceAcquireTimeout,
 		Logger:                 log,
+		Now:                    d.now,
 	}, u.sessions, api, u.fleet, d.deps.newRunner(cfg, api, set.ID, log))
 	return u, nil
 }

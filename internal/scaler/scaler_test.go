@@ -389,6 +389,16 @@ func TestJobCompletedBeforeAnyRunnerListensCancelsBlockedSlot(t *testing.T) {
 	}
 }
 
+func TestJobCompletedResultIsLogged(t *testing.T) {
+	r := newRig(t)
+	r.assigned(1)
+	r.boot("vm-1")
+	r.scale(completed("vm-1"))
+	if !strings.Contains(r.logged(), "job completed") || !strings.Contains(r.logged(), "result=succeeded") {
+		t.Fatalf("log lacks the job result:\n%s", r.logged())
+	}
+}
+
 func TestDroppedDemandIsDebounced(t *testing.T) {
 	r := newRig(t)
 	r.assigned(1)

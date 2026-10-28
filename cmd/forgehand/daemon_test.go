@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -444,5 +445,31 @@ func TestMetricsAddressInUseIsAnError(t *testing.T) {
 	cfg.ListenAddress = first.metricsAddr
 	if _, _, err := newDaemon(cfg, deps{}, hclog.NewNullLogger()).serveMetrics(); err == nil || !strings.Contains(err.Error(), "listen_address") {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestFiveRunnersExitingBeforeTheMarkerEndRunNamingTheCause(t *testing.T) {
+	r := newRig(t, testConfig(1))
+	var mu sync.Mutex
+	var clock time.Time
+	r.d.now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		clock = clock.Add(time.Hour)
+		return clock
+	}
+	r.api.Session.Info.Statistics = assigned(1)
+	r.start()
+
+	for i := 0; i < 5; i++ {
+		_, g := r.boot(fmt.Sprintf("vm-%d", i))
+		g.exit <- 1
+	}
+	err, ok := r.result(5 * time.Second)
+	if !ok || err == nil {
+		t.Fatalf("run = %v (returned %v), want the breaker error", err, ok)
+	}
+	if !strings.Contains(err.Error(), "5 consecutive slots failed") || !strings.Contains(err.Error(), `scaleset "example"`) {
+		t.Fatalf("error does not name the cause: %v", err)
 	}
 }
