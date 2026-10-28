@@ -29,7 +29,9 @@ configuration schema is still changing.
 - A guest image with:
   - POSIX `sh` and `setsid`
   - [actions/runner](https://github.com/actions/runner) unpacked at `runner.dir`
-  - SSH reachable from the host, for the user and key in `connector_config`
+  - SSH reachable from the host as `connector_config.username`; the plugin
+    generates the key pair itself. Set `key_path` and
+    `use_static_credentials = true` only to use a key the image already trusts
 
 ## Install
 
@@ -49,7 +51,7 @@ forgehand check -c forgehand.toml
 forgehand run -c forgehand.toml
 ```
 
-`check` resolves the plugin, finds both key files and authenticates the App, then
+`check` resolves the plugin, finds the key files that are set and authenticates the App, then
 prints `ok` when `run` will start. It creates nothing and starts no VM.
 [`examples/forgehand.toml`](examples/forgehand.toml) comments each required key;
 [`examples/forgehand.service`](examples/forgehand.service) is a hardened systemd unit.

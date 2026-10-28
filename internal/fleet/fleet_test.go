@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -311,4 +313,30 @@ func TestFailedHeartbeatInstanceIsNeverAcquired(t *testing.T) {
 		s := states(dg)[bad]
 		return s == provider.StateDeleting || s == provider.StateDeleted
 	})
+}
+
+func TestSettingsKeyIsOptional(t *testing.T) {
+	var cfg config.Autoscaler
+	cfg.ConnectorConfig.Username = "runner"
+	got, err := settings(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Key != nil || got.UseStaticCredentials {
+		t.Errorf("keyless settings = %+v", got.ConnectorConfig)
+	}
+
+	cfg.ConnectorConfig.UseStaticCredentials = true
+	cfg.ConnectorConfig.KeyPath = filepath.Join(t.TempDir(), "id")
+	if err := os.WriteFile(cfg.ConnectorConfig.KeyPath, []byte("pem"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	got, err = settings(cfg)
+	if err != nil || string(got.Key) != "pem" {
+		t.Errorf("static settings = %+v, err = %v", got.ConnectorConfig, err)
+	}
+	cfg.ConnectorConfig.KeyPath += ".gone"
+	if _, err := settings(cfg); err == nil {
+		t.Error("a configured key_path that cannot be read must fail")
+	}
 }

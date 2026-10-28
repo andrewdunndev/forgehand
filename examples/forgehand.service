@@ -16,8 +16,9 @@ KillSignal=SIGQUIT
 TimeoutStopSec=6h30min
 
 # The credentials appear under /run/credentials/forgehand.service/, readable
-# only by this service. Point private_key_path and key_path there.
+# only by this service. Point private_key_path (and key_path, if used) there.
 LoadCredential=app.pem:/etc/forgehand/app.pem
+# Only for a static guest key (use_static_credentials = true).
 LoadCredential=guest-ssh:/etc/forgehand/guest-ssh
 
 # The plugin runs as a child under these limits. If it needs a socket, device

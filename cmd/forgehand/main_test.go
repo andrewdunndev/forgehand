@@ -122,6 +122,13 @@ func TestCheck(t *testing.T) {
 		}
 	})
 
+	t.Run("keyless connector_config", func(t *testing.T) {
+		noKey := func(s *config.ScaleSet) { s.Autoscaler.ConnectorConfig.KeyPath = "" }
+		if err := checkDaemon(t, github.NewFake(), nil, noKey).check(ctx, &bytes.Buffer{}); err != nil {
+			t.Errorf("err = %v", err)
+		}
+	})
+
 	t.Run("label drift", func(t *testing.T) {
 		api := github.NewFake()
 		api.Sets["example"] = &scaleset.RunnerScaleSet{ID: 9, Labels: []scaleset.Label{{Name: "example"}}}

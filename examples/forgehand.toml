@@ -48,9 +48,10 @@ image = "runner-image"
 
 [scalesets.autoscaler.connector_config]
 protocol = "ssh"
-# required for SSH: the guest user and the private key it trusts.
+# the guest user. The plugin generates the SSH key pair itself. To use a key
+# the image already trusts instead, set use_static_credentials = true and
+# key_path = "/run/credentials/forgehand.service/guest-ssh".
 username = "runner"
-key_path = "/run/credentials/forgehand.service/guest-ssh"
 timeout = "10m"
 
 # Idle VMs kept warm. idle_count = 0 starts a VM only when a job arrives.
