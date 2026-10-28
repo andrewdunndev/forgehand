@@ -1,6 +1,4 @@
 default:
-  tags:
-    - saas-linux-small-amd64
   interruptible: true
 
 workflow:
