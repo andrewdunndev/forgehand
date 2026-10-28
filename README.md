@@ -63,6 +63,10 @@ prints `ok` when `run` will start. It creates nothing and starts no VM.
 - `SIGTERM` and `SIGINT` stop within `shutdown_timeout` seconds, running jobs
   included.
 
+## Instance health
+
+A failed pre-acquire heartbeat removes the instance at once; `failure_threshold` does not govern that.
+
 ## Metrics
 
 With `listen_address` set, forgehand serves Prometheus `/metrics` there. The

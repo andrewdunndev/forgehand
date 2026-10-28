@@ -340,3 +340,36 @@ func TestSettingsKeyIsOptional(t *testing.T) {
 		t.Error("a configured key_path that cannot be read must fail")
 	}
 }
+
+type blockingHeartbeatGroup struct {
+	provider.InstanceGroup
+	mu       sync.Mutex
+	decrease []string
+}
+
+func (g *blockingHeartbeatGroup) Heartbeat(ctx context.Context, _ string) error {
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func (g *blockingHeartbeatGroup) Decrease(_ context.Context, ids []string) ([]string, error) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.decrease = append(g.decrease, ids...)
+	return ids, nil
+}
+
+func TestHeartbeatCutShortByContextRemovesNothing(t *testing.T) {
+	inner := &blockingHeartbeatGroup{}
+	g := removeOnHeartbeatFailure{InstanceGroup: inner}
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	if err := g.Heartbeat(ctx, "vm1"); err == nil {
+		t.Fatal("heartbeat error swallowed")
+	}
+	inner.mu.Lock()
+	defer inner.mu.Unlock()
+	if len(inner.decrease) != 0 {
+		t.Fatalf("Decrease called for %v after the caller's context ended", inner.decrease)
+	}
+}

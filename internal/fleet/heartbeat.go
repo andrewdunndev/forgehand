@@ -18,7 +18,8 @@ func heartbeat(context.Context, provider.ConnectInfo) error { return nil }
 // removeOnHeartbeatFailure wraps an instance group so an instance whose
 // Heartbeat fails is deleted. Taskscaler alone only refuses to hand it out and
 // leaves it idle, because an unhealthy instance does not raise the demand for a
-// replacement.
+// replacement. A heartbeat cut short by the caller's own context says nothing
+// about the instance and removes nothing.
 type removeOnHeartbeatFailure struct {
 	provider.InstanceGroup
 	log hclog.Logger
@@ -26,8 +27,8 @@ type removeOnHeartbeatFailure struct {
 
 func (g removeOnHeartbeatFailure) Heartbeat(ctx context.Context, id string) error {
 	err := g.InstanceGroup.Heartbeat(ctx, id)
-	if err == nil {
-		return nil
+	if err == nil || ctx.Err() != nil {
+		return err
 	}
 	if g.log != nil {
 		g.log.Warn("heartbeat failed, removing instance", "instance", id, "err", err)
