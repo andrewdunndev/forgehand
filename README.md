@@ -1,4 +1,10 @@
+![hero](hero.svg)
+
 # forgehand
+
+[![pipeline](https://gitlab.com/dunn.dev/forgehand/badges/main/pipeline.svg)](https://gitlab.com/dunn.dev/forgehand/-/pipelines)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+![built with GitLab](https://img.shields.io/badge/built_with-GitLab-FC6D26?logo=gitlab)
 
 A daemon that runs GitHub Actions jobs on single-use virtual machines.
 

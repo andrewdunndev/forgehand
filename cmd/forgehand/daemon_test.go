@@ -31,7 +31,7 @@ func testConfig(shutdown int) *config.Config {
 		ShutdownTimeout: config.Seconds(shutdown),
 		ScaleSets: []config.ScaleSet{{
 			Name:   "example",
-			URL:    "https://github.com/example/example",
+			URL:    "https://github.com/example/Example",
 			Labels: []string{"self-hosted", "example"},
 			Runner: config.Runner{ListenTimeout: config.Duration(time.Minute), IdleRunnerTimeout: config.Duration(time.Minute)},
 			Autoscaler: config.Autoscaler{

@@ -85,7 +85,7 @@ func TestCheck(t *testing.T) {
 		api := github.NewFake()
 		api.GetScaleSetErr = errors.New("404 installation not found")
 		err := checkDaemon(api, nil).check(ctx, &bytes.Buffer{})
-		if err == nil || !strings.Contains(err.Error(), "App is installed on https://github.com/example/example") {
+		if err == nil || !strings.Contains(err.Error(), "App is installed on https://github.com/example/Example") {
 			t.Errorf("err = %v", err)
 		}
 	})

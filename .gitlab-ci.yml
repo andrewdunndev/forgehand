@@ -1,0 +1,63 @@
+default:
+  tags:
+    - saas-linux-small-amd64
+  interruptible: true
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
+  auto_cancel:
+    on_new_commit: interruptible
+    on_job_failure: all
+
+stages:
+  - lint
+  - test
+  - build
+
+variables:
+  GOFLAGS: -mod=readonly
+
+include:
+  - component: gitlab.com/dunn.dev/pipeline/go-lint@4.13.0
+  - component: gitlab.com/dunn.dev/pipeline/go-audit@4.13.0
+  - component: gitlab.com/dunn.dev/pipeline/go-build@4.13.0
+    inputs:
+      job_name: go-build
+      binary_name: forgehand
+      package_path: ./cmd/forgehand
+
+# The catalog's lint and audit carry no rules of their own, so the
+# workflow guard above would otherwise skip them on MR pipelines.
+lint:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_COMMIT_TAG'
+
+audit:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_COMMIT_TAG'
+
+test:
+  stage: test
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.13.0
+  variables:
+    GOMODCACHE: $CI_PROJECT_DIR/.gomodcache
+    GOCACHE: $CI_PROJECT_DIR/.gocache
+  cache:
+    key:
+      files: [go.sum]
+      prefix: test
+    paths:
+      - .gomodcache/
+      - .gocache/
+  script:
+    - go vet ./...
+    - go test -race ./...
