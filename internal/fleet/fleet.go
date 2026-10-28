@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"maps"
 	"os"
 	"time"
 
@@ -39,9 +38,6 @@ type Fleet interface {
 }
 
 type Options struct {
-	// Owner is stamped into the plugin config so the plugin sees only the
-	// objects this daemon created.
-	Owner  string
 	Logger hclog.Logger
 	// Name labels the taskscaler and fleeting collectors registered with
 	// Metrics, when Metrics is set.
@@ -61,7 +57,7 @@ type fleetImpl struct {
 
 // Start runs the plugin process named by cfg.Plugin and builds a Fleet on it.
 func Start(cfg config.Autoscaler, opts Options) (Fleet, error) {
-	pluginCfg, err := pluginConfig(cfg, opts.Owner)
+	pluginCfg, err := pluginConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -182,12 +178,12 @@ func mapped(cfg config.Autoscaler, s provider.Settings, up taskscaler.UpFunc) []
 	return opts
 }
 
-func pluginConfig(cfg config.Autoscaler, owner string) ([]byte, error) {
-	m := maps.Clone(cfg.PluginConfig)
+// pluginConfig is exactly what the operator wrote under plugin_config.
+func pluginConfig(cfg config.Autoscaler) ([]byte, error) {
+	m := cfg.PluginConfig
 	if m == nil {
 		m = map[string]any{}
 	}
-	m["owner"] = owner
 	b, err := json.Marshal(m)
 	if err != nil {
 		return nil, fmt.Errorf("marshaling plugin_config: %w", err)

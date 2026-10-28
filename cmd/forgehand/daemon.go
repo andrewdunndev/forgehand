@@ -134,7 +134,6 @@ func (d *daemon) start(ctx context.Context, cfg config.ScaleSet, metrics prometh
 	}
 	sw := sweeper{reg: api, log: log, interval: d.sweepInterval, attempts: d.sweepAttempts}
 	u.fleet, err = d.deps.startFleet(cfg.Autoscaler, fleet.Options{
-		Owner:      u.owner,
 		Logger:     log,
 		Name:       cfg.Name,
 		Metrics:    metrics,

@@ -32,9 +32,8 @@ runner_group = "Default"
   failure_threshold = 3
   delete_instances_on_shutdown = true
     [scalesets.autoscaler.plugin_config]
-    name_prefix = "job-example-"
-    lock_file = "/var/lock/ledger"
-    admit_command = "/usr/bin/admit"
+    address = "10.0.0.1"
+    pool = ["a", "b"]
     [scalesets.autoscaler.connector_config]
     username = "runner"
     key_path = "/run/credentials/guest-ssh"
@@ -55,7 +54,7 @@ func TestParseValid(t *testing.T) {
 	if s.Runner.ListenTimeout != Duration(3*time.Minute) || s.Autoscaler.ConnectorConfig.Timeout != Duration(10*time.Minute) {
 		t.Errorf("durations not parsed: %+v %+v", s.Runner, s.Autoscaler.ConnectorConfig)
 	}
-	if s.Autoscaler.NamePrefix() != "job-example-" || s.Autoscaler.MaxInstances != 2 || len(s.Autoscaler.Policy) != 1 {
+	if s.Autoscaler.MaxInstances != 2 || len(s.Autoscaler.Policy) != 1 {
 		t.Errorf("autoscaler = %+v", s.Autoscaler)
 	}
 }
@@ -98,25 +97,6 @@ func TestBareIntegerDurationIsRejected(t *testing.T) {
 }
 
 func TestParseRejects(t *testing.T) {
-	second := `
-[[scalesets]]
-name = "other"
-url = "https://github.com/owner/other"
-labels = ["other"]
-  [scalesets.github_app]
-  client_id = "c"
-  installation_id = 1
-  private_key_path = "/k"
-  [scalesets.runner]
-  dir = "/r"
-  [scalesets.autoscaler]
-  plugin = "p"
-  max_instances = 1
-    [scalesets.autoscaler.plugin_config]
-    name_prefix = "job-example-"
-    lock_file = "/l"
-    admit_command = "/a"
-`
 	tests := []struct {
 		name string
 		edit func(string) string
@@ -151,13 +131,6 @@ labels = ["other"]
 		{"no runner dir", func(s string) string { return strings.Replace(s, `dir = "/opt/actions-runner"`, "", 1) }, "runner.dir"},
 		{"no plugin", func(s string) string { return strings.Replace(s, `plugin = "fleeting-plugin-static"`, "", 1) }, "autoscaler.plugin is required"},
 		{"no max_instances", func(s string) string { return strings.Replace(s, "max_instances = 2", "", 1) }, "max_instances"},
-		{"no admit_command", func(s string) string { return strings.Replace(s, `admit_command = "/usr/bin/admit"`, "", 1) }, "plugin_config.admit_command is required"},
-		{"empty admit_command", func(s string) string { return strings.Replace(s, `"/usr/bin/admit"`, `""`, 1) }, "plugin_config.admit_command is required"},
-		{"no lock_file", func(s string) string { return strings.Replace(s, `lock_file = "/var/lock/ledger"`, "", 1) }, "plugin_config.lock_file is required"},
-		{"no name_prefix", func(s string) string { return strings.Replace(s, `name_prefix = "job-example-"`, "", 1) }, "name_prefix is required"},
-		{"prefix without dash", func(s string) string { return strings.Replace(s, `"job-example-"`, `"job-example"`, 1) }, `must end with "-"`},
-		{"prefix is job-", func(s string) string { return strings.Replace(s, `"job-example-"`, `"job-"`, 1) }, "reserved"},
-		{"duplicate prefix", func(s string) string { return s + second }, "already used by scalesets[0]"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -172,9 +145,21 @@ labels = ["other"]
 	}
 }
 
-func TestDistinctPrefixesPass(t *testing.T) {
-	second := strings.NewReplacer(`"example"`, `"other"`, "job-example-", "job-other-").Replace(valid[strings.Index(valid, "[[scalesets]]"):])
-	if _, err := Parse([]byte(valid + second)); err != nil {
+func TestPluginConfigIsOpaque(t *testing.T) {
+	cfg, err := Parse([]byte(valid))
+	if err != nil {
 		t.Fatal(err)
+	}
+	pc := cfg.ScaleSets[0].Autoscaler.PluginConfig
+	if pc["address"] != "10.0.0.1" || len(pc) != 2 {
+		t.Errorf("plugin_config = %v", pc)
+	}
+
+	bare := strings.Replace(valid, "    [scalesets.autoscaler.plugin_config]\n    address = \"10.0.0.1\"\n    pool = [\"a\", \"b\"]\n", "", 1)
+	if bare == valid {
+		t.Fatal("edit did not apply")
+	}
+	if _, err := Parse([]byte(bare)); err != nil {
+		t.Errorf("a config without plugin_config keys is rejected: %v", err)
 	}
 }

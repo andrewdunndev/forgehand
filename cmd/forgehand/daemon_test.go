@@ -212,9 +212,8 @@ func TestExistingSetIsNotRecreatedAndStopDeletesNothing(t *testing.T) {
 	if n := len(r.api.CreatedSets()); n != 0 {
 		t.Errorf("created %d scale sets over an existing one", n)
 	}
-	_, opts := r.fleetOptions()
-	if owners := r.api.OwnerList(); owners[0] != "testhost-example" || opts.Owner != "testhost-example" {
-		t.Errorf("owners = %v / %q, want hostname-name", owners, opts.Owner)
+	if owners := r.api.OwnerList(); owners[0] != "testhost-example" {
+		t.Errorf("owners = %v, want hostname-name", owners)
 	}
 	if !r.api.Session.IsClosed() || !r.fl.IsShutdown() {
 		t.Errorf("session closed = %v, fleet shut down = %v", r.api.Session.IsClosed(), r.fl.IsShutdown())

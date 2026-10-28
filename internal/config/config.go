@@ -17,7 +17,6 @@ const (
 	defaultListenTimeout          = Duration(3 * time.Minute)
 	defaultIdleRunnerTimeout      = Duration(5 * time.Minute)
 	defaultInstanceAcquireTimeout = Duration(15 * time.Minute)
-	reservedNamePrefix            = "job-"
 )
 
 var rejectedKeys = map[string]bool{
@@ -138,11 +137,6 @@ func (p Policy) PreemptiveModeEnabled() bool {
 	return *p.PreemptiveMode
 }
 
-func (a Autoscaler) NamePrefix() string {
-	s, _ := a.PluginConfig["name_prefix"].(string)
-	return s
-}
-
 func Load(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -217,7 +211,6 @@ func (c *Config) validate() error {
 		fail("scalesets: at least one [[scalesets]] entry is required")
 	}
 
-	prefixes := map[string]int{}
 	for i := range c.ScaleSets {
 		s := &c.ScaleSets[i]
 		at := fmt.Sprintf("scalesets[%d]", i)
@@ -225,15 +218,6 @@ func (c *Config) validate() error {
 			at = fmt.Sprintf("scalesets[%d] %q", i, s.Name)
 		}
 		s.validate(at, fail)
-
-		prefix := s.Autoscaler.NamePrefix()
-		if prefix == "" {
-			continue
-		}
-		if j, ok := prefixes[prefix]; ok {
-			fail("%s: plugin_config.name_prefix %q is already used by scalesets[%d]; each entry needs its own prefix", at, prefix, j)
-		}
-		prefixes[prefix] = i
 	}
 	return errors.Join(errs...)
 }
@@ -278,18 +262,5 @@ func (s *ScaleSet) validate(at string, fail func(string, ...any)) {
 	}
 	if a.MaxInstances <= 0 {
 		fail("%s: autoscaler.max_instances is required and must be positive", at)
-	}
-	for _, key := range []string{"admit_command", "lock_file"} {
-		if v, _ := a.PluginConfig[key].(string); v == "" {
-			fail("%s: autoscaler.plugin_config.%s is required: every VM start passes the host ledger", at, key)
-		}
-	}
-	switch prefix := a.NamePrefix(); {
-	case prefix == "":
-		fail("%s: autoscaler.plugin_config.name_prefix is required, for example %q", at, "job-"+s.Name+"-")
-	case !strings.HasSuffix(prefix, "-"):
-		fail("%s: plugin_config.name_prefix %q must end with \"-\"", at, prefix)
-	case prefix == reservedNamePrefix:
-		fail("%s: plugin_config.name_prefix %q is reserved; add the scale set name, for example %q", at, prefix, "job-"+s.Name+"-")
 	}
 }

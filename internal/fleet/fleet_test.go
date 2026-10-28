@@ -205,21 +205,26 @@ func TestUpFunc(t *testing.T) {
 	}
 }
 
-func TestPluginConfigCarriesOwner(t *testing.T) {
-	cfg := config.Autoscaler{PluginConfig: map[string]any{"name_prefix": "job-x-", "owner": "someone"}}
-	b, err := pluginConfig(cfg, "host-x")
-	if err != nil {
-		t.Fatal(err)
+func TestPluginConfigIsPassedThroughUnchanged(t *testing.T) {
+	decode := func(cfg config.Autoscaler) map[string]any {
+		t.Helper()
+		b, err := pluginConfig(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got map[string]any
+		if err := json.Unmarshal(b, &got); err != nil {
+			t.Fatal(err)
+		}
+		return got
 	}
-	var got map[string]any
-	if err := json.Unmarshal(b, &got); err != nil {
-		t.Fatal(err)
+
+	if got := decode(config.Autoscaler{}); len(got) != 0 {
+		t.Errorf("empty plugin_config became %v", got)
 	}
-	if got["owner"] != "host-x" || got["name_prefix"] != "job-x-" {
-		t.Errorf("plugin config = %v", got)
-	}
-	if cfg.PluginConfig["owner"] != "someone" {
-		t.Error("pluginConfig modified the config map")
+	got := decode(config.Autoscaler{PluginConfig: map[string]any{"address": "10.0.0.1", "owner": "someone"}})
+	if len(got) != 2 || got["address"] != "10.0.0.1" || got["owner"] != "someone" {
+		t.Errorf("plugin config = %v, want the operator's keys only", got)
 	}
 }
 
