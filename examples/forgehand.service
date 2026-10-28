@@ -1,0 +1,37 @@
+[Unit]
+Description=forgehand: GitHub Actions jobs on single-use VMs
+Documentation=https://gitlab.com/dunn.dev/forgehand
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/forgehand run -c /etc/forgehand/forgehand.toml
+Restart=on-failure
+RestartSec=5s
+
+# SIGQUIT drains: idle runners go and running jobs finish before the daemon
+# exits. systemd sends SIGKILL after TimeoutStopSec, so set it above the
+# longest job you allow, or that job is killed mid-run.
+KillSignal=SIGQUIT
+TimeoutStopSec=6h30min
+
+# The credentials appear under /run/credentials/forgehand.service/, readable
+# only by this service. Point private_key_path and key_path there.
+LoadCredential=app.pem:/etc/forgehand/app.pem
+LoadCredential=guest-ssh:/etc/forgehand/guest-ssh
+
+# The plugin runs as a child under these limits. If it needs a socket, device
+# or path outside them, grant it with SupplementaryGroups= or ReadWritePaths=.
+DynamicUser=yes
+StateDirectory=forgehand
+Environment=HOME=/var/lib/forgehand
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+
+[Install]
+WantedBy=multi-user.target
