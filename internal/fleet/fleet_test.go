@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"gitlab.com/gitlab-org/fleeting/fleeting"
 	"gitlab.com/gitlab-org/fleeting/fleeting/plugin/fleeting-plugin-dummy"
 	"gitlab.com/gitlab-org/fleeting/fleeting/provider"
@@ -88,6 +90,28 @@ func TestInstancesAreSingleUse(t *testing.T) {
 	})
 	if s := states(group)[b.InstanceID()]; s != provider.StateRunning {
 		t.Errorf("unreleased instance state = %v", s)
+	}
+}
+
+func TestCapacityPerInstanceIsOne(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	newFleet(t, &dummy.InstanceGroup{MaxSize: 4}, Options{Name: "set", Metrics: reg})
+
+	gauge := func() (float64, bool) {
+		families, err := reg.Gather()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range families {
+			if strings.HasSuffix(f.GetName(), "max_tasks_per_instance") && len(f.GetMetric()) == 1 {
+				return f.GetMetric()[0].GetGauge().GetValue(), true
+			}
+		}
+		return 0, false
+	}
+	eventually(t, "the capacity gauge", func() bool { _, ok := gauge(); return ok })
+	if v, _ := gauge(); v != 1 {
+		t.Errorf("max_tasks_per_instance = %v, want 1", v)
 	}
 }
 
