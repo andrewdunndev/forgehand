@@ -134,7 +134,7 @@ func (r *Runner) session(ctx context.Context, inst fleet.Instance, script string
 	if err != nil {
 		return false, err
 	}
-	defer client.Close()
+	defer func() { _ = client.Close() }()
 	return true, client.Run(ctx, connector.RunOptions{Command: script, Stdin: stdin, Stdout: stdout})
 }
 

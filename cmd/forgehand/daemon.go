@@ -186,7 +186,7 @@ func (u *unit) listenOnce(ctx context.Context) error {
 	defer func() {
 		cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), closeTimeout)
 		defer cancel()
-		sess.Close(cctx)
+		_ = sess.Close(cctx)
 	}()
 	u.sessions.set(sess)
 
@@ -222,7 +222,9 @@ func (d *daemon) run(ctx context.Context, sigs <-chan os.Signal) error {
 			return d.stop(units, cancel)
 		}
 		if err != nil {
-			d.stop(units, cancel)
+			if stopErr := d.stop(units, cancel); stopErr != nil {
+				d.log.Warn("stopping after a failed start", "error", stopErr)
+			}
 			return fmt.Errorf("scaleset %q: %w", s.Name, err)
 		}
 		units = append(units, u)
@@ -291,8 +293,8 @@ func (d *daemon) serveMetrics() (prometheus.Registerer, func(), error) {
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
 	srv := &http.Server{Handler: mux}
-	go srv.Serve(ln)
-	return reg, func() { srv.Close() }, nil
+	go func() { _ = srv.Serve(ln) }()
+	return reg, func() { _ = srv.Close() }, nil
 }
 
 // drain returns once every scale set has no runner left, or sooner when a
@@ -308,7 +310,9 @@ func (d *daemon) drain(units []*unit, sigs <-chan os.Signal, fatal <-chan error)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				u.scaler.Drain(ctx)
+				if err := u.scaler.Drain(ctx); err != nil {
+					u.log.Warn("draining", "error", err)
+				}
 			}()
 		}
 		wg.Wait()
@@ -344,7 +348,9 @@ func (d *daemon) stop(units []*unit, stopListening context.CancelFunc) error {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				u.scaler.Stop(ctx)
+				if err := u.scaler.Stop(ctx); err != nil {
+					u.log.Warn("stopping the scaler", "error", err)
+				}
 				u.fleet.Shutdown(ctx)
 				select {
 				case <-u.listened:
@@ -386,9 +392,9 @@ func (d *daemon) checkOne(ctx context.Context, cfg config.ScaleSet, out io.Write
 	case err != nil:
 		return fmt.Errorf("%w: check client_id, installation_id and the private key, and that the App is installed on %s with Administration read and write", err, cfg.URL)
 	case set == nil:
-		fmt.Fprintf(out, "%s: authenticated; the scale set will be created at the first run\n", cfg.Name)
+		_, _ = fmt.Fprintf(out, "%s: authenticated; the scale set will be created at the first run\n", cfg.Name)
 	default:
-		fmt.Fprintf(out, "%s: authenticated; scale set %d exists with the configured labels\n", cfg.Name, set.ID)
+		_, _ = fmt.Fprintf(out, "%s: authenticated; scale set %d exists with the configured labels\n", cfg.Name, set.ID)
 	}
 	return nil
 }

@@ -159,7 +159,7 @@ func TestMarkersFireHooksAcrossChunks(t *testing.T) {
 	hl := &hookLog{}
 	useTarget(t, func(_ int, _ context.Context, o connector.RunOptions) error {
 		for _, chunk := range []string{"noise\n2026-10-28: Listen", "ing for Jobs\r\n", "x: Running ", "job: build\n"} {
-			o.Stdout.Write([]byte(chunk))
+			_, _ = o.Stdout.Write([]byte(chunk))
 		}
 		return nil
 	})
@@ -184,12 +184,12 @@ func TestSessionDropWithRunnerAliveRedialsAndReattaches(t *testing.T) {
 	tg := useTarget(t, func(n int, _ context.Context, o connector.RunOptions) error {
 		switch {
 		case n == 1:
-			o.Stdout.Write([]byte("Listening for Jobs\n"))
+			_, _ = o.Stdout.Write([]byte("Listening for Jobs\n"))
 			return &exitErr{code: 0, err: io.ErrUnexpectedEOF}
 		case isProbe(o):
-			o.Stdout.Write([]byte("alive\n"))
+			_, _ = o.Stdout.Write([]byte("alive\n"))
 		default:
-			o.Stdout.Write([]byte("Running job: build\n"))
+			_, _ = o.Stdout.Write([]byte("Running job: build\n"))
 		}
 		return nil
 	})
@@ -214,7 +214,7 @@ func TestSessionDropThenProbeFindsExit(t *testing.T) {
 		if n == 1 {
 			return errors.New("connection reset")
 		}
-		o.Stdout.Write([]byte("exited 3\n"))
+		_, _ = o.Stdout.Write([]byte("exited 3\n"))
 		return nil
 	})
 	code, err := run(t, newRunner(github.NewFake()), &hookLog{})
@@ -228,7 +228,7 @@ func TestSessionDropBeforeStartIsNotARunner(t *testing.T) {
 		if n == 1 {
 			return errors.New("connection reset")
 		}
-		o.Stdout.Write([]byte("none\n"))
+		_, _ = o.Stdout.Write([]byte("none\n"))
 		return nil
 	})
 	_, err := run(t, newRunner(github.NewFake()), &hookLog{})
@@ -296,7 +296,7 @@ func TestCancelledContextEndsRun(t *testing.T) {
 
 func TestDiag(t *testing.T) {
 	useTarget(t, func(_ int, _ context.Context, o connector.RunOptions) error {
-		o.Stdout.Write([]byte("Runner_20261028.log tail\n"))
+		_, _ = o.Stdout.Write([]byte("Runner_20261028.log tail\n"))
 		return nil
 	})
 	got := newRunner(github.NewFake()).Diag(context.Background(), &fleet.FakeInstance{ID: "vm-1"})

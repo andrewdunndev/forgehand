@@ -45,8 +45,8 @@ func TestOneJobThroughTaskscalerAndTheDummyPlugin(t *testing.T) {
 	running := make(chan struct{})
 	finish := make(chan struct{})
 	tg := useTarget(t, func(_ int, ctx context.Context, o connector.RunOptions) error {
-		o.Stdout.Write([]byte("2026-10-28 12:00:00Z: Listening for Jobs\n"))
-		o.Stdout.Write([]byte("2026-10-28 12:00:05Z: Running job: build\n"))
+		_, _ = o.Stdout.Write([]byte("2026-10-28 12:00:00Z: Listening for Jobs\n"))
+		_, _ = o.Stdout.Write([]byte("2026-10-28 12:00:05Z: Running job: build\n"))
 		close(running)
 		select {
 		case <-finish:
@@ -65,7 +65,7 @@ func TestOneJobThroughTaskscalerAndTheDummyPlugin(t *testing.T) {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		sc.Stop(ctx)
+		_ = sc.Stop(ctx)
 	})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)

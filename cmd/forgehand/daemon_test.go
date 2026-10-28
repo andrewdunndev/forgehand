@@ -226,7 +226,7 @@ func TestMissingSetIsCreatedWithLabelsAndUpdatesOff(t *testing.T) {
 	r.start()
 	r.wait("the session", func() bool { return r.sessions() > 0 })
 	r.sigs <- syscall.SIGTERM
-	r.result(3 * time.Second)
+	_, _ = r.result(3 * time.Second)
 
 	created := r.api.CreatedSets()
 	if len(created) != 1 {
@@ -347,7 +347,7 @@ func TestListenerReconnectsWithTheSameOwner(t *testing.T) {
 		t.Errorf("owners = %v", owners)
 	}
 	r.sigs <- syscall.SIGTERM
-	r.result(3 * time.Second)
+	_, _ = r.result(3 * time.Second)
 }
 
 func TestLeftoverRunnerIsRemovedOnceItStopsReportingAJob(t *testing.T) {
@@ -372,14 +372,14 @@ func TestLeftoverRunnerIsRemovedOnceItStopsReportingAJob(t *testing.T) {
 		t.Errorf("removed %v", got)
 	}
 	r.sigs <- syscall.SIGTERM
-	r.result(3 * time.Second)
+	_, _ = r.result(3 * time.Second)
 }
 
 func TestPreexistingAndUnexpectedInstancesAreDeletedWithTheirRunners(t *testing.T) {
 	r := newRig(t, testConfig(5))
 	group := &dummy.InstanceGroup{MaxSize: 4}
 	old := group.AddInstance(provider.StateRunning)
-	r.api.GenerateJitRunnerConfig(context.Background(), old, 1)
+	_, _ = r.api.GenerateJitRunnerConfig(context.Background(), old, 1)
 	r.d.deps.startFleet = func(_ config.Autoscaler, o fleet.Options) (fleet.Fleet, error) {
 		return fleet.New(group, config.Autoscaler{
 			MaxInstances:                2,
@@ -401,11 +401,11 @@ func TestPreexistingAndUnexpectedInstancesAreDeletedWithTheirRunners(t *testing.
 	r.wait("the pre-existing instance and its runner gone", gone(old))
 
 	stray := group.AddInstance(provider.StateRunning)
-	r.api.GenerateJitRunnerConfig(context.Background(), stray, 1)
+	_, _ = r.api.GenerateJitRunnerConfig(context.Background(), stray, 1)
 	r.wait("the unexpected instance and its runner gone", gone(stray))
 
 	r.sigs <- syscall.SIGTERM
-	r.result(3 * time.Second)
+	_, _ = r.result(3 * time.Second)
 }
 
 func stateOf(g *dummy.InstanceGroup, id string) provider.State {
@@ -453,7 +453,7 @@ func TestMetricsEndpointServesTheFleetCollectors(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, _ := io.ReadAll(resp.Body)
 	for _, want := range []string{"taskscaler_", `scaleset="example"`} {
 		if !strings.Contains(string(body), want) {

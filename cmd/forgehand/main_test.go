@@ -18,9 +18,13 @@ import (
 
 func TestExecuteUsage(t *testing.T) {
 	cfg := filepath.Join(t.TempDir(), "forgehand.toml")
-	os.WriteFile(cfg, []byte("log_level = \"info\"\n"), 0o600)
+	if err := os.WriteFile(cfg, []byte("log_level = \"info\"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	bad := filepath.Join(t.TempDir(), "level.toml")
-	os.WriteFile(bad, []byte("log_level = \"loud\"\nshutdown_timeout = 30\n"), 0o600)
+	if err := os.WriteFile(bad, []byte("log_level = \"loud\"\nshutdown_timeout = 30\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	for _, tc := range []struct {
 		name string

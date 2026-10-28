@@ -157,7 +157,7 @@ func newRig(t *testing.T) *rig {
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		s.Stop(ctx)
+		_ = s.Stop(ctx)
 	})
 	return r
 }
