@@ -1,0 +1,233 @@
+package fleet
+
+import (
+	"context"
+	"encoding/json"
+	"slices"
+	"sync"
+	"testing"
+	"time"
+
+	"gitlab.com/gitlab-org/fleeting/fleeting"
+	"gitlab.com/gitlab-org/fleeting/fleeting/plugin/fleeting-plugin-dummy"
+	"gitlab.com/gitlab-org/fleeting/fleeting/provider"
+	"gitlab.com/gitlab-org/fleeting/taskscaler"
+
+	"gitlab.com/dunn.dev/forgehand/internal/config"
+)
+
+func testConfig() config.Autoscaler {
+	return config.Autoscaler{
+		MaxInstances:                4,
+		UpdateInterval:              30 * time.Millisecond,
+		UpdateIntervalWhenExpecting: 10 * time.Millisecond,
+		DeletionRetryInterval:       30 * time.Millisecond,
+		ShutdownDeletionInterval:    10 * time.Millisecond,
+		DeleteInstancesOnShutdown:   true,
+	}
+}
+
+func newFleet(t *testing.T, group *dummy.InstanceGroup, opts Options) Fleet {
+	t.Helper()
+	f, err := New(group, testConfig(), opts, taskscaler.WithAcquireDelay(5*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		f.Shutdown(ctx)
+	})
+	return f
+}
+
+func acquire(t *testing.T, f Fleet, key string) Instance {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	inst, err := f.Acquire(ctx, key)
+	if err != nil {
+		t.Fatalf("acquire %s: %v", key, err)
+	}
+	return inst
+}
+
+func eventually(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+func states(g *dummy.InstanceGroup) map[string]provider.State {
+	out := map[string]provider.State{}
+	for _, i := range g.List() {
+		out[i.ID] = i.State
+	}
+	return out
+}
+
+func TestInstancesAreSingleUse(t *testing.T) {
+	group := &dummy.InstanceGroup{MaxSize: 4}
+	f := newFleet(t, group, Options{})
+
+	a := acquire(t, f, "a")
+	b := acquire(t, f, "b")
+	if a.InstanceID() == b.InstanceID() {
+		t.Fatalf("capacity per instance is not 1: both acquisitions hold %s", a.InstanceID())
+	}
+
+	f.Release("a")
+	eventually(t, "released instance deleted", func() bool {
+		s := states(group)[a.InstanceID()]
+		return s == provider.StateDeleting || s == provider.StateDeleted
+	})
+	if s := states(group)[b.InstanceID()]; s != provider.StateRunning {
+		t.Errorf("unreleased instance state = %v", s)
+	}
+}
+
+func TestAcquireFollowsDemand(t *testing.T) {
+	group := &dummy.InstanceGroup{MaxSize: 4}
+	f := newFleet(t, group, Options{})
+
+	var wg sync.WaitGroup
+	for _, k := range []string{"a", "b", "c"} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			acquire(t, f, k)
+		}()
+	}
+	wg.Wait()
+	if n := len(group.List()); n != 3 {
+		t.Errorf("3 blocked acquires made %d instances", n)
+	}
+}
+
+func TestPreexistingInstanceIsRejectedAndReported(t *testing.T) {
+	group := &dummy.InstanceGroup{MaxSize: 4}
+	old := group.AddInstance(provider.StateRunning)
+
+	left := make(chan string, 4)
+	f := newFleet(t, group, Options{OnLeftover: func(id string) { left <- id }})
+	_ = f
+
+	select {
+	case id := <-left:
+		if id != old {
+			t.Errorf("leftover = %s, want %s", id, old)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("pre-existing instance not reported")
+	}
+	eventually(t, "pre-existing instance deleted", func() bool {
+		s := states(group)[old]
+		return s == provider.StateDeleting || s == provider.StateDeleted
+	})
+}
+
+func TestUnexpectedInstanceIsRejectedAndReported(t *testing.T) {
+	group := &dummy.InstanceGroup{MaxSize: 4}
+	left := make(chan string, 4)
+	newFleet(t, group, Options{OnLeftover: func(id string) { left <- id }})
+
+	stray := group.AddInstance(provider.StateRunning)
+	select {
+	case id := <-left:
+		if id != stray {
+			t.Errorf("leftover = %s, want %s", id, stray)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("unexpected instance not reported")
+	}
+}
+
+func TestUpFunc(t *testing.T) {
+	tests := []struct {
+		name     string
+		in       taskscaler.UpFuncInstance
+		reject   bool
+		leftover bool
+	}{
+		{"requested", taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseRequested}, false, false},
+		{"preexisted", taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CausePreexisted}, true, true},
+		{"unexpected", taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseUnexpected}, true, true},
+		{"live acquisitions", taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseRequested, Acquisitions: []string{"k"}}, true, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := make(chan string, 1)
+			up := upFunc(context.Background(), config.Autoscaler{}, func(id string) { got <- id })
+			err := up(nil, tt.in)
+			if (err != nil) != tt.reject {
+				t.Fatalf("err = %v, reject = %v", err, tt.reject)
+			}
+			select {
+			case id := <-got:
+				if !tt.leftover || id != "i" {
+					t.Errorf("leftover reported for %q", id)
+				}
+			case <-time.After(100 * time.Millisecond):
+				if tt.leftover {
+					t.Error("leftover not reported")
+				}
+			}
+		})
+	}
+}
+
+func TestPluginConfigCarriesOwner(t *testing.T) {
+	cfg := config.Autoscaler{PluginConfig: map[string]any{"name_prefix": "job-x-", "owner": "someone"}}
+	b, err := pluginConfig(cfg, "host-x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["owner"] != "host-x" || got["name_prefix"] != "job-x-" {
+		t.Errorf("plugin config = %v", got)
+	}
+	if cfg.PluginConfig["owner"] != "someone" {
+		t.Error("pluginConfig modified the config map")
+	}
+}
+
+func TestFakeGrantAndCancel(t *testing.T) {
+	f := NewFake(Options{})
+	ctx, cancel := context.WithCancel(context.Background())
+
+	type result struct {
+		inst Instance
+		err  error
+	}
+	res := make(chan result, 2)
+	go func() { i, err := f.Acquire(context.Background(), "a"); res <- result{i, err} }()
+	go func() { i, err := f.Acquire(ctx, "b"); res <- result{i, err} }()
+	eventually(t, "two blocked acquires", func() bool { return len(f.Waiting()) == 2 })
+
+	cancel()
+	r := <-res
+	if r.err == nil {
+		t.Fatal("cancelled acquire returned an instance")
+	}
+	if got := f.Waiting(); !slices.Equal(got, []string{"a"}) {
+		t.Fatalf("waiting = %v", got)
+	}
+	if !f.Grant("a", &FakeInstance{ID: "vm1"}) {
+		t.Fatal("no acquire waiting for a")
+	}
+	if r := <-res; r.err != nil || r.inst.InstanceID() != "vm1" {
+		t.Fatalf("granted acquire = %+v", r)
+	}
+	f.Release("a")
+	if got := f.Released(); !slices.Equal(got, []string{"a"}) {
+		t.Errorf("released = %v", got)
+	}
+}
