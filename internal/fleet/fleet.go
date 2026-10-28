@@ -3,17 +3,21 @@ package fleet
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"maps"
 	"os"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
+	"github.com/prometheus/client_golang/prometheus"
 	"gitlab.com/gitlab-org/fleeting/fleeting"
 	"gitlab.com/gitlab-org/fleeting/fleeting-artifact/pkg/installer"
 	"gitlab.com/gitlab-org/fleeting/fleeting/connector"
+	flprometheus "gitlab.com/gitlab-org/fleeting/fleeting/metrics/prometheus"
 	"gitlab.com/gitlab-org/fleeting/fleeting/provider"
 	"gitlab.com/gitlab-org/fleeting/taskscaler"
+	tsprometheus "gitlab.com/gitlab-org/fleeting/taskscaler/metrics/prometheus"
 
 	"gitlab.com/dunn.dev/forgehand/internal/config"
 )
@@ -39,6 +43,10 @@ type Options struct {
 	// objects this daemon created.
 	Owner  string
 	Logger hclog.Logger
+	// Name labels the taskscaler and fleeting collectors registered with
+	// Metrics, when Metrics is set.
+	Name    string
+	Metrics prometheus.Registerer
 	// OnLeftover receives the id of an instance from an earlier daemon run
 	// that was rejected and is being deleted, so its GitHub runner can be
 	// removed. It runs on its own goroutine.
@@ -92,6 +100,16 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 	tsOpts := append(mapped(cfg, settings, upFunc(ctx, cfg, opts.OnLeftover)), extra...)
 	if opts.Logger != nil {
 		tsOpts = append(tsOpts, taskscaler.WithLogger(opts.Logger.Named("taskscaler")))
+	}
+	if opts.Metrics != nil {
+		labels := prometheus.Labels{"scaleset": opts.Name}
+		tsMetrics := tsprometheus.New(tsprometheus.WithConstLabels(labels))
+		flMetrics := flprometheus.New(flprometheus.WithConstLabels(labels))
+		if err := errors.Join(opts.Metrics.Register(tsMetrics), opts.Metrics.Register(flMetrics)); err != nil {
+			cancel()
+			return nil, fmt.Errorf("registering metrics: %w", err)
+		}
+		tsOpts = append(tsOpts, taskscaler.WithMetricsCollector(tsMetrics), taskscaler.WithFleetingMetricsCollector(flMetrics))
 	}
 
 	initCtx, initCancel := context.WithTimeout(ctx, initTimeout)

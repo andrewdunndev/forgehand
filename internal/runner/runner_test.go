@@ -1,0 +1,321 @@
+package runner
+
+import (
+	"context"
+	"errors"
+	"io"
+	"net"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/hashicorp/go-hclog"
+	"gitlab.com/gitlab-org/fleeting/fleeting/connector"
+	"gitlab.com/gitlab-org/fleeting/fleeting/provider"
+
+	"gitlab.com/dunn.dev/forgehand/internal/config"
+	"gitlab.com/dunn.dev/forgehand/internal/fleet"
+	"gitlab.com/dunn.dev/forgehand/internal/github"
+	"gitlab.com/dunn.dev/forgehand/internal/scaler"
+)
+
+type exitErr struct {
+	code int
+	err  error
+}
+
+func (e *exitErr) Error() string { return "exit" }
+func (e *exitErr) Unwrap() error { return e.err }
+func (e *exitErr) ExitCode() int { return e.code }
+
+type call struct {
+	command string
+	stdin   string
+}
+
+type fakeClient struct {
+	run func(ctx context.Context, opts connector.RunOptions) error
+}
+
+func (c *fakeClient) Run(ctx context.Context, opts connector.RunOptions) error {
+	return c.run(ctx, opts)
+}
+func (*fakeClient) Dial(string, string) (net.Conn, error) { return nil, errors.New("unused") }
+func (*fakeClient) DialRun(context.Context, string) (net.Conn, error) {
+	return nil, errors.New("unused")
+}
+func (*fakeClient) Close() error { return nil }
+
+// target swaps connector.Dial for a fake whose sessions are served by serve.
+type target struct {
+	mu    sync.Mutex
+	calls []call
+	dials int
+	serve func(n int, ctx context.Context, opts connector.RunOptions) error
+}
+
+func useTarget(t *testing.T, serve func(n int, ctx context.Context, opts connector.RunOptions) error) *target {
+	t.Helper()
+	tg := &target{serve: serve}
+	old := connector.Dial
+	connector.Dial = func(ctx context.Context, _ provider.ConnectInfo, _ connector.DialOptions) (connector.Client, error) {
+		tg.mu.Lock()
+		tg.dials++
+		tg.mu.Unlock()
+		return &fakeClient{run: func(ctx context.Context, opts connector.RunOptions) error {
+			var stdin string
+			if opts.Stdin != nil {
+				b, _ := io.ReadAll(opts.Stdin)
+				stdin = string(b)
+				opts.Stdin = strings.NewReader(stdin)
+			}
+			tg.mu.Lock()
+			tg.calls = append(tg.calls, call{opts.Command, stdin})
+			n := len(tg.calls)
+			tg.mu.Unlock()
+			return tg.serve(n, ctx, opts)
+		}}, nil
+	}
+	t.Cleanup(func() { connector.Dial = old })
+	return tg
+}
+
+func (tg *target) all() []call {
+	tg.mu.Lock()
+	defer tg.mu.Unlock()
+	return append([]call(nil), tg.calls...)
+}
+
+type hookLog struct {
+	mu sync.Mutex
+	ev []string
+}
+
+func (h *hookLog) hooks() scaler.Hooks {
+	return scaler.Hooks{
+		Listening:  func() { h.add("listening") },
+		RunningJob: func() { h.add("running") },
+	}
+}
+
+func (h *hookLog) add(e string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.ev = append(h.ev, e)
+}
+
+func (h *hookLog) list() []string {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return append([]string(nil), h.ev...)
+}
+
+func newRunner(api *github.Fake) *Runner {
+	r := New(config.Runner{Dir: "/opt/actions-runner"}, false, api, 7, hclog.NewNullLogger())
+	r.lostWindow = 200 * time.Millisecond
+	r.pollInterval = time.Millisecond
+	return r
+}
+
+func run(t *testing.T, r *Runner, hl *hookLog) (int, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return r.Run(ctx, &fleet.FakeInstance{ID: "vm-1"}, "vm-1", hl.hooks())
+}
+
+func isProbe(opts connector.RunOptions) bool { return strings.Contains(opts.Command, "echo alive") }
+func isFollow(opts connector.RunOptions) bool {
+	return !strings.Contains(opts.Command, "read -r") && !isProbe(opts)
+}
+
+func TestStartCarriesOnceAndKeepsBlobOffArgv(t *testing.T) {
+	api := github.NewFake()
+	tg := useTarget(t, func(int, context.Context, connector.RunOptions) error { return nil })
+
+	if _, err := run(t, newRunner(api), &hookLog{}); err != nil {
+		t.Fatal(err)
+	}
+	c := tg.all()[0]
+	if !strings.Contains(c.command, "bin/Runner.Listener run --once") {
+		t.Errorf("runner command line lacks --once:\n%s", c.command)
+	}
+	if !strings.Contains(c.command, "setsid") || !strings.Contains(c.command, "RETURN_VERSION_DEPRECATED_EXIT_CODE=1") {
+		t.Errorf("runner is not detached or does not report a retired version:\n%s", c.command)
+	}
+	if strings.Contains(c.command, "jit-vm-1") {
+		t.Error("the JIT blob is on the command line")
+	}
+	if c.stdin != "jit-vm-1\n" {
+		t.Errorf("stdin = %q, want the JIT blob and a newline", c.stdin)
+	}
+	if got := api.JitNames; len(got) != 1 || got[0] != "vm-1" {
+		t.Errorf("JIT minted for %v, want the instance id", got)
+	}
+}
+
+func TestMarkersFireHooksAcrossChunks(t *testing.T) {
+	hl := &hookLog{}
+	useTarget(t, func(_ int, _ context.Context, o connector.RunOptions) error {
+		for _, chunk := range []string{"noise\n2026-10-28: Listen", "ing for Jobs\r\n", "x: Running ", "job: build\n"} {
+			o.Stdout.Write([]byte(chunk))
+		}
+		return nil
+	})
+	if _, err := run(t, newRunner(github.NewFake()), hl); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(hl.list(), ","); got != "listening,running" {
+		t.Errorf("hooks = %s", got)
+	}
+}
+
+func TestExitStatusIsTheRunnerExitCode(t *testing.T) {
+	useTarget(t, func(int, context.Context, connector.RunOptions) error { return &exitErr{code: 7} })
+	code, err := run(t, newRunner(github.NewFake()), &hookLog{})
+	if code != 7 || err != nil {
+		t.Errorf("= %d, %v; want 7, nil", code, err)
+	}
+}
+
+func TestSessionDropWithRunnerAliveRedialsAndReattaches(t *testing.T) {
+	hl := &hookLog{}
+	tg := useTarget(t, func(n int, _ context.Context, o connector.RunOptions) error {
+		switch {
+		case n == 1:
+			o.Stdout.Write([]byte("Listening for Jobs\n"))
+			return &exitErr{code: 0, err: io.ErrUnexpectedEOF}
+		case isProbe(o):
+			o.Stdout.Write([]byte("alive\n"))
+		default:
+			o.Stdout.Write([]byte("Running job: build\n"))
+		}
+		return nil
+	})
+	code, err := run(t, newRunner(github.NewFake()), hl)
+	if code != 0 || err != nil {
+		t.Fatalf("= %d, %v; want 0, nil", code, err)
+	}
+	calls := tg.all()
+	if len(calls) != 3 || !isProbe(connector.RunOptions{Command: calls[1].command}) || !isFollow(connector.RunOptions{Command: calls[2].command}) {
+		t.Errorf("sessions = %d, want start, probe, follow", len(calls))
+	}
+	if calls[2].stdin != "" {
+		t.Error("the follow session was handed the JIT blob again")
+	}
+	if got := strings.Join(hl.list(), ","); got != "listening,running" {
+		t.Errorf("hooks = %s", got)
+	}
+}
+
+func TestSessionDropThenProbeFindsExit(t *testing.T) {
+	useTarget(t, func(n int, _ context.Context, o connector.RunOptions) error {
+		if n == 1 {
+			return errors.New("connection reset")
+		}
+		o.Stdout.Write([]byte("exited 3\n"))
+		return nil
+	})
+	code, err := run(t, newRunner(github.NewFake()), &hookLog{})
+	if code != 3 || err != nil {
+		t.Errorf("= %d, %v; want 3, nil", code, err)
+	}
+}
+
+func TestSessionDropBeforeStartIsNotARunner(t *testing.T) {
+	useTarget(t, func(n int, _ context.Context, o connector.RunOptions) error {
+		if n == 1 {
+			return errors.New("connection reset")
+		}
+		o.Stdout.Write([]byte("none\n"))
+		return nil
+	})
+	_, err := run(t, newRunner(github.NewFake()), &hookLog{})
+	if err == nil || errors.Is(err, scaler.ErrLost) {
+		t.Errorf("err = %v, want a start failure", err)
+	}
+}
+
+func TestUnreachableGuestIsLost(t *testing.T) {
+	first := true
+	var mu sync.Mutex
+	old := connector.Dial
+	t.Cleanup(func() { connector.Dial = old })
+	connector.Dial = func(context.Context, provider.ConnectInfo, connector.DialOptions) (connector.Client, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		if !first {
+			return nil, errors.New("no route to host")
+		}
+		first = false
+		return &fakeClient{run: func(context.Context, connector.RunOptions) error { return io.ErrUnexpectedEOF }}, nil
+	}
+	_, err := run(t, newRunner(github.NewFake()), &hookLog{})
+	if !errors.Is(err, scaler.ErrLost) {
+		t.Errorf("err = %v, want ErrLost", err)
+	}
+}
+
+func TestFirstDialFailureFailsTheStart(t *testing.T) {
+	old := connector.Dial
+	t.Cleanup(func() { connector.Dial = old })
+	connector.Dial = func(context.Context, provider.ConnectInfo, connector.DialOptions) (connector.Client, error) {
+		return nil, errors.New("dial ssh: timeout")
+	}
+	_, err := run(t, newRunner(github.NewFake()), &hookLog{})
+	if err == nil || errors.Is(err, scaler.ErrLost) || !strings.Contains(err.Error(), "timeout") {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestJitErrorDialsNothing(t *testing.T) {
+	api := github.NewFake()
+	api.JitErr = errors.New("403")
+	tg := useTarget(t, func(int, context.Context, connector.RunOptions) error { return nil })
+	if _, err := run(t, newRunner(api), &hookLog{}); err == nil {
+		t.Fatal("no error")
+	}
+	if tg.dials != 0 {
+		t.Errorf("dialed %d times after a JIT error", tg.dials)
+	}
+}
+
+func TestCancelledContextEndsRun(t *testing.T) {
+	useTarget(t, func(_ int, ctx context.Context, _ connector.RunOptions) error {
+		<-ctx.Done()
+		return ctx.Err()
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(20*time.Millisecond, cancel)
+	_, err := newRunner(github.NewFake()).Run(ctx, &fleet.FakeInstance{ID: "vm-1"}, "vm-1", scaler.Hooks{})
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("err = %v", err)
+	}
+}
+
+func TestDiag(t *testing.T) {
+	useTarget(t, func(_ int, _ context.Context, o connector.RunOptions) error {
+		o.Stdout.Write([]byte("Runner_20261028.log tail\n"))
+		return nil
+	})
+	got := newRunner(github.NewFake()).Diag(context.Background(), &fleet.FakeInstance{ID: "vm-1"})
+	if got != "Runner_20261028.log tail\n" {
+		t.Errorf("diag = %q", got)
+	}
+
+	old := connector.Dial
+	t.Cleanup(func() { connector.Dial = old })
+	connector.Dial = func(context.Context, provider.ConnectInfo, connector.DialOptions) (connector.Client, error) {
+		return nil, errors.New("refused")
+	}
+	if got := newRunner(github.NewFake()).Diag(context.Background(), &fleet.FakeInstance{ID: "vm-1"}); !strings.Contains(got, "refused") {
+		t.Errorf("diag = %q", got)
+	}
+}
+
+func TestQuote(t *testing.T) {
+	if got := quote("/opt/it's"); got != `'/opt/it'\''s'` {
+		t.Errorf("quote = %s", got)
+	}
+}

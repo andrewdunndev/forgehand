@@ -475,7 +475,7 @@ func (s *Scaler) reap(sl *slot) {
 		defer s.wg.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), reapTimeout)
 		defer cancel()
-		err := s.removeRunner(ctx, sl.name)
+		err := RemoveRunner(ctx, s.registry, sl.name)
 
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -494,15 +494,17 @@ func (s *Scaler) reap(sl *slot) {
 	}()
 }
 
-func (s *Scaler) removeRunner(ctx context.Context, name string) error {
-	ref, err := s.registry.GetRunnerByName(ctx, name)
+// RemoveRunner removes the runner called name from GitHub. A runner that is
+// not registered yields scaleset.RunnerNotFoundError.
+func RemoveRunner(ctx context.Context, reg Registry, name string) error {
+	ref, err := reg.GetRunnerByName(ctx, name)
 	if err != nil {
 		return err
 	}
 	if ref == nil {
 		return scaleset.RunnerNotFoundError
 	}
-	return s.registry.RemoveRunner(ctx, int64(ref.ID))
+	return reg.RemoveRunner(ctx, int64(ref.ID))
 }
 
 // listenTimeout fails a slot whose runner never printed its listening marker,

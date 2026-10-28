@@ -30,34 +30,42 @@ type API interface {
 	RemoveRunner(ctx context.Context, runnerID int64) error
 }
 
-// EnsureScaleSet returns the named scale set, creating it with the labels and
-// the runner self-update switched off when absent. An existing set whose
-// labels differ is never touched: GitHub ignores label updates, and deleting
-// the set would orphan queued jobs.
-func EnsureScaleSet(ctx context.Context, api API, name string, labels []string) (*scaleset.RunnerScaleSet, error) {
+// LookupScaleSet returns the named scale set, or nil when it does not exist.
+// An existing set whose labels differ from labels is an error: GitHub ignores
+// label updates, and deleting the set would orphan queued jobs.
+func LookupScaleSet(ctx context.Context, api API, name string, labels []string) (*scaleset.RunnerScaleSet, error) {
 	set, err := api.GetRunnerScaleSet(ctx, DefaultGroupID, name)
 	if err != nil {
 		return nil, fmt.Errorf("get scale set %q: %w", name, err)
 	}
 	if set == nil {
-		want := &scaleset.RunnerScaleSet{
-			Name:          name,
-			RunnerGroupID: DefaultGroupID,
-			RunnerSetting: scaleset.RunnerSetting{DisableUpdate: true},
-		}
-		for _, l := range labels {
-			want.Labels = append(want.Labels, scaleset.Label{Name: l})
-		}
-		set, err = api.CreateRunnerScaleSet(ctx, want)
-		if err != nil {
-			return nil, fmt.Errorf("create scale set %q: %w", name, err)
-		}
-		return set, nil
+		return nil, nil
 	}
-
 	have := labelNames(set.Labels)
 	if !sameLabels(have, labels) {
 		return nil, fmt.Errorf("scale set %q has labels %v, config wants %v: %w", name, have, labels, ErrLabelDrift)
+	}
+	return set, nil
+}
+
+// EnsureScaleSet returns the named scale set, creating it with the labels and
+// the runner self-update switched off when absent.
+func EnsureScaleSet(ctx context.Context, api API, name string, labels []string) (*scaleset.RunnerScaleSet, error) {
+	set, err := LookupScaleSet(ctx, api, name, labels)
+	if err != nil || set != nil {
+		return set, err
+	}
+	want := &scaleset.RunnerScaleSet{
+		Name:          name,
+		RunnerGroupID: DefaultGroupID,
+		RunnerSetting: scaleset.RunnerSetting{DisableUpdate: true},
+	}
+	for _, l := range labels {
+		want.Labels = append(want.Labels, scaleset.Label{Name: l})
+	}
+	set, err = api.CreateRunnerScaleSet(ctx, want)
+	if err != nil {
+		return nil, fmt.Errorf("create scale set %q: %w", name, err)
 	}
 	return set, nil
 }

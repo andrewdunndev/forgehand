@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/actions/scaleset"
+	"github.com/google/uuid"
 )
 
 // Fake is an in-memory API for tests. It has no delete call for scale sets, so
@@ -33,7 +34,7 @@ func NewFake() *Fake {
 	return &Fake{
 		Sets:    map[string]*scaleset.RunnerScaleSet{},
 		Runners: map[string]*scaleset.RunnerReference{},
-		Session: &FakeSession{},
+		Session: NewFakeSession(),
 		nextID:  100,
 	}
 }
@@ -100,12 +101,25 @@ func (f *Fake) RemoveRunner(_ context.Context, id int64) error {
 	return scaleset.RunnerNotFoundError
 }
 
+func NewFakeSession() *FakeSession {
+	return &FakeSession{
+		Info: scaleset.RunnerScaleSetSession{
+			SessionID:  uuid.New(),
+			Statistics: &scaleset.RunnerScaleSetStatistic{},
+		},
+		inbox: make(chan *scaleset.RunnerScaleSetMessage, 16),
+	}
+}
+
 // FakeSession records the calls a listener makes and replays scripted
-// messages.
+// errors, then messages, then whatever Push delivers.
 type FakeSession struct {
 	mu sync.Mutex
 
+	Info      scaleset.RunnerScaleSetSession
 	Messages  []*scaleset.RunnerScaleSetMessage
+	Errs      []error
+	inbox     chan *scaleset.RunnerScaleSetMessage
 	Acquired  [][]int64
 	Deleted   []int
 	AcquireFn func(ids []int64) ([]int64, error)
@@ -116,6 +130,12 @@ var _ Session = (*FakeSession)(nil)
 
 func (s *FakeSession) GetMessage(ctx context.Context, _, _ int) (*scaleset.RunnerScaleSetMessage, error) {
 	s.mu.Lock()
+	if len(s.Errs) > 0 {
+		err := s.Errs[0]
+		s.Errs = s.Errs[1:]
+		s.mu.Unlock()
+		return nil, err
+	}
 	if len(s.Messages) > 0 {
 		m := s.Messages[0]
 		s.Messages = s.Messages[1:]
@@ -123,9 +143,16 @@ func (s *FakeSession) GetMessage(ctx context.Context, _, _ int) (*scaleset.Runne
 		return m, nil
 	}
 	s.mu.Unlock()
-	<-ctx.Done()
-	return nil, ctx.Err()
+	select {
+	case m := <-s.inbox:
+		return m, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
+
+// Push delivers m to the listener's next GetMessage.
+func (s *FakeSession) Push(m *scaleset.RunnerScaleSetMessage) { s.inbox <- m }
 
 func (s *FakeSession) DeleteMessage(_ context.Context, id int) error {
 	s.mu.Lock()
@@ -144,13 +171,45 @@ func (s *FakeSession) AcquireJobs(_ context.Context, ids []int64) ([]int64, erro
 	return ids, nil
 }
 
-func (s *FakeSession) Session() scaleset.RunnerScaleSetSession {
-	return scaleset.RunnerScaleSetSession{}
-}
+func (s *FakeSession) Session() scaleset.RunnerScaleSetSession { return s.Info }
 
 func (s *FakeSession) Close(context.Context) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Closed = true
 	return nil
+}
+
+// OwnerList returns the session owners seen so far.
+func (f *Fake) OwnerList() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.Owners...)
+}
+
+// CreatedSets returns the scale sets created so far.
+func (f *Fake) CreatedSets() []*scaleset.RunnerScaleSet {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]*scaleset.RunnerScaleSet(nil), f.Created...)
+}
+
+// RemovedRunners returns the ids passed to successful RemoveRunner calls.
+func (f *Fake) RemovedRunners() []int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]int64(nil), f.Removed...)
+}
+
+// SetRemoveErr makes RemoveRunner fail with err until it is set to nil.
+func (f *Fake) SetRemoveErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.RemoveErr = err
+}
+
+func (s *FakeSession) IsClosed() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Closed
 }
