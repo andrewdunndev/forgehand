@@ -1,11 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="route: routing / reverse proxy / fanout.">
-  <g stroke="#4a6741" fill="none" stroke-linecap="round">
-    <rect x="6" y="26" width="14" height="12" stroke-width="1.6" rx="1"/>
-    <rect x="44" y="12" width="14" height="10" stroke-width="1.6" rx="1"/>
-    <rect x="44" y="28" width="14" height="10" stroke-width="1.6" rx="1"/>
-    <rect x="44" y="44" width="14" height="10" stroke-width="1.6" rx="1"/>
-    <line x1="20" y1="32" x2="44" y2="17" stroke-width="1.5"/>
-    <line x1="20" y1="32" x2="44" y2="33" stroke-width="1.5"/>
-    <line x1="20" y1="32" x2="44" y2="49" stroke-width="1.5"/>
-  </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="forgehand: strike glyph.">
+  <line x1="32" y1="34" x2="32" y2="62" stroke="#4a6741" stroke-width="6" stroke-linecap="round"/>
+  <path fill-rule="evenodd" fill="#4a6741" d="M38 1 C 36 8, 30 10, 24 16 C 17 23, 18 31, 25 37 Q 32 42, 39 37 C 46 31, 46 23, 42 16 C 40 12, 38 8, 38 1 Z M32 19 a4.5 6 0 1 0 0.01 0 Z"/>
 </svg>

@@ -1,36 +1,30 @@
-<svg viewBox="0 0 1200 430" width="1200" height="430" font-family="IBM Plex Sans, Helvetica, Arial, sans-serif" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="forgehand hero: Single-use VMs for Actions jobs.">
+<svg viewBox="0 0 1200 430" width="1200" height="430" font-family="IBM Plex Sans, Helvetica, Arial, sans-serif" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="forgehand hero: Boot, run one job, delete.">
   <rect x="0" y="0" width="1200" height="430" fill="#f4f4f4"/>
   <g font-family="IBM Plex Sans, Helvetica, Arial, sans-serif">
-  <text x="60" y="34" font-size="10" font-weight="600" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="1.4">DAEMON · GITHUB ACTIONS · SCALE SETS</text>
+  <text x="60" y="34" font-size="10" font-weight="600" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="1.4">DAEMON · GITHUB ACTIONS · FLEETING VMS</text>
   <text x="1140" y="34" text-anchor="end" font-size="10" font-weight="600" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="1.4">2026</text>
   <line x1="60" y1="48" x2="1140" y2="48" stroke="#e0e0e0" stroke-width="1"/>
   <text x="60" y="138" font-size="72" font-weight="700" fill="#4a6741" letter-spacing="-2">forgehand</text>
-  <text x="60" y="172" font-size="14" fill="#404040">Runs each GitHub Actions job on its own VM.</text>
-  <text x="60" y="192" font-size="14" fill="#404040">One binary, one TOML file, no database.</text>
+  <text x="60" y="172" font-size="14" fill="#404040">Runs each GitHub Actions job on its own throwaway VM.</text>
+  <text x="60" y="192" font-size="14" fill="#404040">GitHub's queue, GitLab's scaler, one binary, one TOML file.</text>
   <text x="60" y="222" font-size="12" font-style="italic" fill="#404040">Boot, run one job, delete.</text>
   <g transform="translate(110 240) scale(2.2)">
-  <g stroke="#4a6741" fill="none" stroke-linecap="round">
-    <rect x="6" y="26" width="14" height="12" stroke-width="1.6" rx="1"/>
-    <rect x="44" y="12" width="14" height="10" stroke-width="1.6" rx="1"/>
-    <rect x="44" y="28" width="14" height="10" stroke-width="1.6" rx="1"/>
-    <rect x="44" y="44" width="14" height="10" stroke-width="1.6" rx="1"/>
-    <line x1="20" y1="32" x2="44" y2="17" stroke-width="1.5"/>
-    <line x1="20" y1="32" x2="44" y2="33" stroke-width="1.5"/>
-    <line x1="20" y1="32" x2="44" y2="49" stroke-width="1.5"/>
-  </g>
+  <line x1="32" y1="34" x2="32" y2="61" stroke="#4a6741" stroke-width="3.2" stroke-linecap="round"/>
+  <ellipse cx="32" cy="26" rx="4.5" ry="6" fill="#4a6741"/>
+  <path d="M38 2 C 36 9, 30 11, 24 17 C 17 24, 18 32, 25 38 Q 32 43, 39 38 C 46 32, 46 24, 42 17 C 40 13, 38 9, 38 2 Z" fill="none" stroke="#4a6741" stroke-width="2" stroke-linejoin="round"/>
   </g>
   <text x="560" y="72" font-size="10" font-weight="700" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="1.4">FLOW</text>
   <text x="850" y="72" font-size="10" font-weight="700" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="1.4">DISCIPLINE</text>
   <rect x="560" y="84" width="270" height="130" rx="3" fill="#ffffff" stroke="#e0e0e0" stroke-width="1"/>
   <text x="578" y="106" font-size="10" font-weight="700" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="1.4">IN</text>
   <text x="578" y="152" font-size="32" font-weight="700" fill="#4a6741" letter-spacing="-0.5">listen</text>
-  <text x="578" y="178" font-size="11" fill="#404040">Follows a GitHub Actions scale set.</text>
+  <text x="578" y="178" font-size="11" fill="#404040">Long-polls a GitHub Actions scale set.</text>
   <text x="578" y="200" font-size="9" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="0.6">SCALE SET · LABELS</text>
   <rect x="850" y="84" width="270" height="130" rx="3" fill="#ffffff" stroke="#e0e0e0" stroke-width="1"/>
   <text x="868" y="106" font-size="10" font-weight="700" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="1.4">POSTURE</text>
   <text x="868" y="152" font-size="32" font-weight="700" fill="#4a6741" letter-spacing="-0.5">boot</text>
   <text x="868" y="178" font-size="11" fill="#404040">One VM per job through a fleeting plugin.</text>
-  <text x="868" y="200" font-size="9" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="0.6">FLEETING · SSH</text>
+  <text x="868" y="200" font-size="9" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="0.6">FLEETING · SSH · JIT RUNNER</text>
   <rect x="560" y="224" width="270" height="130" rx="3" fill="#ffffff" stroke="#e0e0e0" stroke-width="1"/>
   <text x="578" y="246" font-size="10" font-weight="700" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="1.4">OUT</text>
   <text x="578" y="292" font-size="32" font-weight="700" fill="#4a6741" letter-spacing="-0.5">scale</text>
@@ -40,7 +34,7 @@
   <text x="868" y="246" font-size="10" font-weight="700" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="1.4">LIFETIME</text>
   <text x="868" y="292" font-size="32" font-weight="700" fill="#4a6741" letter-spacing="-0.5">delete</text>
   <text x="868" y="318" font-size="11" fill="#404040">The VM is gone when the job ends.</text>
-  <text x="868" y="340" font-size="9" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="0.6">SINGLE-USE · JIT</text>
+  <text x="868" y="340" font-size="9" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="0.6">SINGLE-USE · NO REUSE</text>
   <line x1="60" y1="386" x2="1140" y2="386" stroke="#e0e0e0" stroke-width="1"/>
   <text x="60" y="412" font-size="10" font-weight="600" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="1.4">GO · TASKSCALER · FLEETING · MIT</text>
   <text x="1140" y="412" text-anchor="end" font-size="10" font-weight="600" font-family="IBM Plex Mono, Menlo, monospace" fill="#707070" letter-spacing="1.4">GITLAB.COM/DUNN.DEV/FORGEHAND</text>
