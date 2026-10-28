@@ -55,13 +55,18 @@ type fleetImpl struct {
 	kill   func()
 }
 
+// LookPath resolves a plugin path, name or OCI reference to its binary.
+func LookPath(plugin string) (string, error) {
+	return installer.LookPath(plugin, "")
+}
+
 // Start runs the plugin process named by cfg.Plugin and builds a Fleet on it.
 func Start(cfg config.Autoscaler, opts Options) (Fleet, error) {
 	pluginCfg, err := pluginConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-	path, err := installer.LookPath(cfg.Plugin, "")
+	path, err := LookPath(cfg.Plugin)
 	if err != nil {
 		return nil, fmt.Errorf("loading fleeting plugin: %w", err)
 	}

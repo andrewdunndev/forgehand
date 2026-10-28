@@ -68,10 +68,27 @@ func TestExecuteHelpAndVersion(t *testing.T) {
 	}
 }
 
-func checkDaemon(api github.API, err error) *daemon {
-	return newDaemon(testConfig(5), deps{
-		hostname: "testhost",
-		newAPI:   func(config.ScaleSet) (github.API, error) { return api, err },
+func checkDaemon(t *testing.T, api github.API, err error, edit ...func(*config.ScaleSet)) *daemon {
+	t.Helper()
+	dir := t.TempDir()
+	appKey := filepath.Join(dir, "app.pem")
+	sshKey := filepath.Join(dir, "id")
+	for _, f := range []string{appKey, sshKey} {
+		if err := os.WriteFile(f, []byte("key"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cfg := testConfig(5)
+	cfg.ScaleSets[0].GitHubApp.PrivateKeyPath = appKey
+	cfg.ScaleSets[0].Autoscaler.Plugin = "fleeting-plugin-example"
+	cfg.ScaleSets[0].Autoscaler.ConnectorConfig.KeyPath = sshKey
+	for _, e := range edit {
+		e(&cfg.ScaleSets[0])
+	}
+	return newDaemon(cfg, deps{
+		hostname:   "testhost",
+		newAPI:     func(config.ScaleSet) (github.API, error) { return api, err },
+		lookPlugin: func(p string) (string, error) { return "/plugins/" + p, nil },
 	}, hclog.NewNullLogger())
 }
 
@@ -81,8 +98,15 @@ func TestCheck(t *testing.T) {
 	t.Run("new set", func(t *testing.T) {
 		api := github.NewFake()
 		var out bytes.Buffer
-		if err := checkDaemon(api, nil).check(ctx, &out); err != nil {
+		if err := checkDaemon(t, api, nil).check(ctx, &out); err != nil {
 			t.Fatal(err)
+		}
+		lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+		if last := lines[len(lines)-1]; !strings.HasPrefix(last, "ok:") || !strings.Contains(last, "run will start") {
+			t.Errorf("last line = %q, want an ok line saying run will start", last)
+		}
+		if !strings.Contains(out.String(), "plugin resolves to /plugins/fleeting-plugin-example") {
+			t.Errorf("out = %q, want the resolved plugin path", out.String())
 		}
 		if !strings.Contains(out.String(), "will be created") || len(api.CreatedSets()) != 0 {
 			t.Errorf("out = %q, created = %d: check must not create", out.String(), len(api.CreatedSets()))
@@ -93,7 +117,7 @@ func TestCheck(t *testing.T) {
 		api := github.NewFake()
 		api.Sets["example"] = &scaleset.RunnerScaleSet{ID: 9, Labels: []scaleset.Label{{Name: "self-hosted"}, {Name: "example"}}}
 		var out bytes.Buffer
-		if err := checkDaemon(api, nil).check(ctx, &out); err != nil || !strings.Contains(out.String(), "scale set 9 exists") {
+		if err := checkDaemon(t, api, nil).check(ctx, &out); err != nil || !strings.Contains(out.String(), "scale set 9 exists") {
 			t.Errorf("err = %v, out = %q", err, out.String())
 		}
 	})
@@ -101,7 +125,7 @@ func TestCheck(t *testing.T) {
 	t.Run("label drift", func(t *testing.T) {
 		api := github.NewFake()
 		api.Sets["example"] = &scaleset.RunnerScaleSet{ID: 9, Labels: []scaleset.Label{{Name: "example"}}}
-		if err := checkDaemon(api, nil).check(ctx, &bytes.Buffer{}); !errors.Is(err, github.ErrLabelDrift) {
+		if err := checkDaemon(t, api, nil).check(ctx, &bytes.Buffer{}); !errors.Is(err, github.ErrLabelDrift) {
 			t.Errorf("err = %v", err)
 		}
 	})
@@ -109,16 +133,48 @@ func TestCheck(t *testing.T) {
 	t.Run("auth failure names the next action", func(t *testing.T) {
 		api := github.NewFake()
 		api.GetScaleSetErr = errors.New("404 installation not found")
-		err := checkDaemon(api, nil).check(ctx, &bytes.Buffer{})
+		err := checkDaemon(t, api, nil).check(ctx, &bytes.Buffer{})
 		if err == nil || !strings.Contains(err.Error(), "App is installed on https://github.com/example/Example") {
 			t.Errorf("err = %v", err)
 		}
 	})
 
 	t.Run("unreadable key", func(t *testing.T) {
-		err := checkDaemon(nil, errors.New("read github_app.private_key_path: no such file")).check(ctx, &bytes.Buffer{})
+		err := checkDaemon(t, nil, errors.New("read github_app.private_key_path: no such file")).check(ctx, &bytes.Buffer{})
 		if err == nil || !strings.Contains(err.Error(), "private_key_path") {
 			t.Errorf("err = %v", err)
+		}
+	})
+	for _, tc := range []struct {
+		name string
+		edit func(*config.ScaleSet)
+		want string
+	}{
+		{"missing app key", func(s *config.ScaleSet) { s.GitHubApp.PrivateKeyPath += ".gone" }, "github_app.private_key_path: "},
+		{"missing connector key", func(s *config.ScaleSet) { s.Autoscaler.ConnectorConfig.KeyPath += ".gone" }, "connector_config.key_path: "},
+		{"key is a directory", func(s *config.ScaleSet) {
+			s.Autoscaler.ConnectorConfig.KeyPath = filepath.Dir(s.Autoscaler.ConnectorConfig.KeyPath)
+		}, "is a directory"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var out bytes.Buffer
+			err := checkDaemon(t, github.NewFake(), nil, tc.edit).check(ctx, &out)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want one containing %q", err, tc.want)
+			}
+			if strings.Contains(out.String(), "ok:") {
+				t.Errorf("out = %q: a failed check must not say ok", out.String())
+			}
+		})
+	}
+
+	t.Run("plugin not found names the next action", func(t *testing.T) {
+		d := checkDaemon(t, github.NewFake(), nil)
+		d.deps.lookPlugin = func(string) (string, error) { return "", errors.New("not found") }
+		var out bytes.Buffer
+		err := d.check(ctx, &out)
+		if err == nil || !strings.Contains(err.Error(), "autoscaler.plugin") || !strings.Contains(err.Error(), "install the plugin") || strings.Contains(out.String(), "ok:") {
+			t.Errorf("err = %v, out = %q", err, out.String())
 		}
 	})
 }

@@ -37,6 +37,7 @@ const (
 type deps struct {
 	hostname   string
 	newAPI     func(config.ScaleSet) (github.API, error)
+	lookPlugin func(plugin string) (string, error)
 	startFleet func(config.Autoscaler, fleet.Options) (fleet.Fleet, error)
 	newRunner  func(cfg config.ScaleSet, api github.API, scaleSetID int, log hclog.Logger) scaler.Runner
 }
@@ -46,6 +47,7 @@ func realDeps() deps {
 	return deps{
 		hostname:   host,
 		newAPI:     func(c config.ScaleSet) (github.API, error) { return github.New(c, Version) },
+		lookPlugin: fleet.LookPath,
 		startFleet: fleet.Start,
 		newRunner: func(c config.ScaleSet, api github.API, id int, log hclog.Logger) scaler.Runner {
 			return runner.New(c.Runner, c.Autoscaler.ConnectorConfig.UseExternalAddr, api, id, log.Named("runner"))
@@ -367,8 +369,9 @@ func (d *daemon) stop(units []*unit, stopListening context.CancelFunc) error {
 	}
 }
 
-// check validates what can be proven without starting a VM: the App
-// authenticates and each scale set is absent or matches its labels.
+// check validates what can be proven without starting a VM: the plugin and
+// key files resolve, the App authenticates and each scale set is absent or
+// matches its labels. It ends with an ok line only when everything passed.
 func (d *daemon) check(ctx context.Context, out io.Writer) error {
 	var errs []error
 	for _, s := range d.cfg.ScaleSets {
@@ -376,10 +379,41 @@ func (d *daemon) check(ctx context.Context, out io.Writer) error {
 			errs = append(errs, fmt.Errorf("scaleset %q: %w", s.Name, err))
 		}
 	}
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	_, _ = fmt.Fprintln(out, "ok: the configuration is valid; forgehand run will start")
+	return nil
+}
+
+func (d *daemon) checkLocal(cfg config.ScaleSet, out io.Writer) error {
+	var errs []error
+	path, err := d.deps.lookPlugin(cfg.Autoscaler.Plugin)
+	if err != nil {
+		errs = append(errs, fmt.Errorf("autoscaler.plugin %q: %w: install the plugin on this host or set the full path to its binary", cfg.Autoscaler.Plugin, err))
+	} else {
+		_, _ = fmt.Fprintf(out, "%s: plugin resolves to %s\n", cfg.Name, path)
+	}
+	for _, f := range []struct{ key, path, next string }{
+		{"github_app.private_key_path", cfg.GitHubApp.PrivateKeyPath, "download the App's private key to that path"},
+		{"autoscaler.connector_config.key_path", cfg.Autoscaler.ConnectorConfig.KeyPath, "point it at the SSH private key the guest image trusts"},
+	} {
+		if f.path == "" {
+			continue
+		}
+		if info, err := os.Stat(f.path); err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w: %s", f.key, err, f.next))
+		} else if info.IsDir() {
+			errs = append(errs, fmt.Errorf("%s: %s is a directory: %s", f.key, f.path, f.next))
+		}
+	}
 	return errors.Join(errs...)
 }
 
 func (d *daemon) checkOne(ctx context.Context, cfg config.ScaleSet, out io.Writer) error {
+	if err := d.checkLocal(cfg, out); err != nil {
+		return err
+	}
 	api, err := d.deps.newAPI(cfg)
 	if err != nil {
 		return err
