@@ -16,6 +16,8 @@ stages:
   - lint
   - test
   - build
+  - package
+  - release
 
 variables:
   GOFLAGS: -mod=readonly
@@ -32,6 +34,18 @@ include:
       job_name: go-build
       binary_name: forgehand
       package_path: ./cmd/forgehand
+  - component: gitlab.com/dunn.dev/pipeline/go-release-binary@4.13.0
+    inputs:
+      binary_name: forgehand
+      package_path: ./cmd/forgehand
+      package_name: forgehand
+  - component: gitlab.com/dunn.dev/pipeline/go-sbom@4.13.0
+    inputs:
+      package_name: forgehand
+  - component: gitlab.com/dunn.dev/pipeline/slsa-attest@4.13.0
+  - component: gitlab.com/dunn.dev/pipeline/release-create@4.13.0
+    inputs:
+      package_name: forgehand
 
 # The catalog's lint and audit carry no rules of their own, so the
 # workflow guard above would otherwise skip them on MR pipelines.
@@ -63,3 +77,11 @@ test:
   script:
     - go vet ./...
     - go test -race ./...
+
+package:
+  parallel:
+    matrix:
+      - GOOS: linux
+        GOARCH: amd64
+      - GOOS: linux
+        GOARCH: arm64
