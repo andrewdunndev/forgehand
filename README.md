@@ -6,34 +6,24 @@
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![built with GitLab](https://img.shields.io/badge/built_with-GitLab-FC6D26?logo=gitlab)
 
-A daemon that runs GitHub Actions jobs on single-use virtual machines.
+A daemon that runs each GitHub Actions job on a virtual machine made for that job alone.
 
-forgehand listens to a GitHub Actions scale set. For each assigned job it boots
-one VM through a fleeting plugin, hands the VM a just-in-time runner
-configuration over SSH, and deletes the VM when the job ends. Capacity is driven
-by taskscaler, so the autoscaler configuration follows gitlab-runner's
-`[runners.autoscaler]`.
-
-One binary, one TOML file, no database, no webhooks.
-
-## Usage
-
-    forgehand check -c config.toml   # config, App auth and scale set labels; starts nothing
-    forgehand run -c config.toml
-
-`run` creates each scale set on first start and never deletes it. A scale set
-whose labels differ from the config is refused: labels are fixed at creation,
-so rename the set in the config.
-
-SIGQUIT drains: idle runners are removed at once and running jobs finish.
-SIGTERM and SIGINT stop within `shutdown_timeout` seconds and end running jobs.
-`listen_address` serves the taskscaler and fleeting Prometheus metrics at
-`/metrics`.
+forgehand listens to a GitHub Actions scale set as a GitHub App. For each job it
+takes a fresh VM from a [fleeting](https://gitlab.com/gitlab-org/fleeting/fleeting)
+plugin, starts a just-in-time runner on it over SSH, and releases the VM when the
+job ends. [taskscaler](https://gitlab.com/gitlab-org/fleeting/taskscaler) drives
+capacity, so the `[runners.autoscaler]` settings from gitlab-runner carry over
+and any fleeting plugin should fit.
 
 ## Status
 
-Pre-release. The configuration schema and daemon behavior are still changing.
+Pre-release. The tests take one job end to end against fleeting's dummy plugin;
+nothing has run on real hardware yet, and the configuration schema is still
+changing. Issues and merge requests go to
+[GitLab](https://gitlab.com/dunn.dev/forgehand); a GitHub mirror may come later.
+
+Build with `mise install && just build`; test with `just test`.
 
 ## License
 
-MIT
+[MIT](LICENSE).
