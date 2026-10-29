@@ -23,12 +23,12 @@ configuration schema is still changing.
 
 ## Prerequisites
 
-- A GitHub App installed on the repository or organization, with Administration
+- A GitHub App installed on the repository, with Administration
   read and write. You need its client ID, its installation ID and a private key.
 - A fleeting plugin for your hypervisor or cloud, installed on the host.
 - A guest image with:
   - POSIX `sh` and `setsid`
-  - [actions/runner](https://github.com/actions/runner) unpacked at `runner.dir`
+  - [actions/runner](https://github.com/actions/runner) unpacked at `runner.dir`, writable by `connector_config.username`
   - SSH reachable from the host as `connector_config.username`; the plugin
     generates the key pair itself. Set `key_path` and
     `use_static_credentials = true` only to use a key the image already trusts
@@ -51,8 +51,7 @@ forgehand check -c forgehand.toml
 forgehand run -c forgehand.toml
 ```
 
-`check` resolves the plugin, finds the key files that are set and authenticates the App, then
-prints `ok` when `run` will start. It creates nothing and starts no VM.
+`check` resolves the plugin, finds the key files that are set and authenticates the App, then prints `ok`. It does not start the plugin; `plugin_config` is validated when `run` starts it. It creates nothing and starts no VM.
 [`examples/forgehand.toml`](examples/forgehand.toml) comments each required key;
 [`examples/forgehand.service`](examples/forgehand.service) is a hardened systemd unit.
 

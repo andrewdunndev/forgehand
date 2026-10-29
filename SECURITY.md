@@ -32,3 +32,9 @@ disclosure date within thirty days. Please do not open a public issue first.
   to their maintainers.
 - Issues that need an attacker who already controls the host or the config file.
 - Theoretical issues without a concrete attack path.
+
+## Guest network
+
+Guest SSH host keys are not verified, because fleeting's connector ignores
+them. The guest network must stop guests spoofing each other's IP or MAC: use
+VF spoofchk plus port isolation, or libvirt's clean-traffic filter.

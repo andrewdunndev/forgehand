@@ -382,7 +382,7 @@ func (d *daemon) check(ctx context.Context, out io.Writer) error {
 	if len(errs) > 0 {
 		return errors.Join(errs...)
 	}
-	_, _ = fmt.Fprintln(out, "ok: the configuration is valid; forgehand run will start")
+	_, _ = fmt.Fprintln(out, "ok: the configuration is valid; plugin_config is checked when run starts the plugin")
 	return nil
 }
 

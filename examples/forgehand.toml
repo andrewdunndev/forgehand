@@ -14,7 +14,7 @@ shutdown_timeout = 30
 [[scalesets]]
 # required: the scale set name. Created on GitHub at the first run.
 name = "example"
-# required: the repository (or organization) URL the GitHub App is installed on.
+# required: the repository URL the GitHub App is installed on.
 url = "https://github.com/owner/repo"
 # required: workflows select this scale set with runs-on.
 labels = ["self-hosted", "example"]
@@ -43,6 +43,9 @@ instance_acquire_timeout = "15m"
 delete_instances_on_shutdown = true
 
 # The keys here belong to the plugin; forgehand passes them through untouched.
+# Each scale set or daemon needs its own name_prefix or owner in the plugin config;
+# the owner defaults to name_prefix and forgehand does not set it, so sharing
+# one makes them delete each other's VMs.
 [scalesets.autoscaler.plugin_config]
 image = "runner-image"
 

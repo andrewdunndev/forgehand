@@ -13,21 +13,25 @@ RestartSec=5s
 # exits. systemd sends SIGKILL after TimeoutStopSec, so set it above the
 # longest job you allow, or that job is killed mid-run.
 KillSignal=SIGQUIT
+# SIGQUIT must reach only the daemon; the plugin child survives the drain.
+KillMode=mixed
 TimeoutStopSec=6h30min
 
 # The credentials appear under /run/credentials/forgehand.service/, readable
 # only by this service. Point private_key_path (and key_path, if used) there.
 LoadCredential=app.pem:/etc/forgehand/app.pem
-# Only for a static guest key (use_static_credentials = true).
-LoadCredential=guest-ssh:/etc/forgehand/guest-ssh
+# Uncomment together with use_static_credentials = true.
+#LoadCredential=guest-ssh:/etc/forgehand/guest-ssh
 
 # The plugin runs as a child under these limits. If it needs a socket, device
 # or path outside them, grant it with SupplementaryGroups= or ReadWritePaths=.
 DynamicUser=yes
 StateDirectory=forgehand
 Environment=HOME=/var/lib/forgehand
+Environment=FLEETING_PLUGIN_PATH=/usr/local/lib/fleeting/plugins
 NoNewPrivileges=yes
 ProtectSystem=strict
+ReadOnlyPaths=/usr/local/lib/fleeting
 ProtectHome=yes
 PrivateTmp=yes
 ProtectKernelTunables=yes

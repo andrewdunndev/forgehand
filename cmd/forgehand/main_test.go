@@ -102,8 +102,8 @@ func TestCheck(t *testing.T) {
 			t.Fatal(err)
 		}
 		lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-		if last := lines[len(lines)-1]; !strings.HasPrefix(last, "ok:") || !strings.Contains(last, "run will start") {
-			t.Errorf("last line = %q, want an ok line saying run will start", last)
+		if last := lines[len(lines)-1]; !strings.HasPrefix(last, "ok:") || !strings.Contains(last, "checked when run starts the plugin") {
+			t.Errorf("last line = %q, want an ok line saying plugin_config is checked at run", last)
 		}
 		if !strings.Contains(out.String(), "plugin resolves to /plugins/fleeting-plugin-example") {
 			t.Errorf("out = %q, want the resolved plugin path", out.String())
