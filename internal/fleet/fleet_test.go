@@ -253,8 +253,8 @@ func TestPluginConfigIsPassedThroughUnchanged(t *testing.T) {
 	if got := decode(config.Autoscaler{}); len(got) != 0 {
 		t.Errorf("empty plugin_config became %v", got)
 	}
-	got := decode(config.Autoscaler{PluginConfig: map[string]any{"address": "10.0.0.1", "owner": "someone"}})
-	if len(got) != 2 || got["address"] != "10.0.0.1" || got["owner"] != "someone" {
+	got := decode(config.Autoscaler{PluginConfig: map[string]any{"address": "10.0.0.1", "region": "north"}})
+	if len(got) != 2 || got["address"] != "10.0.0.1" || got["region"] != "north" {
 		t.Errorf("plugin config = %v, want the operator's keys only", got)
 	}
 }

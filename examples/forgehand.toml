@@ -43,9 +43,7 @@ instance_ready_command = "true"
 instance_acquire_timeout = "15m"
 
 # The keys here belong to the plugin; forgehand passes them through untouched.
-# Each scale set or daemon needs its own name_prefix or owner in the plugin config;
-# the owner defaults to name_prefix and forgehand does not set it, so sharing
-# one makes them delete each other's VMs.
+# Each scale set needs its own name_prefix.
 [scalesets.autoscaler.plugin_config]
 image = "runner-image"
 
