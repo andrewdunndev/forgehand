@@ -220,3 +220,10 @@ func (s *FakeSession) IsClosed() bool {
 	defer s.mu.Unlock()
 	return s.Closed
 }
+
+// SetJitErr makes GenerateJitRunnerConfig fail with err until it is set to nil.
+func (f *Fake) SetJitErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.JitErr = err
+}

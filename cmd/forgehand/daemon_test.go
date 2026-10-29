@@ -546,7 +546,7 @@ func TestOccupiedRunnerNameKeepsDaemonUpUntilItClears(t *testing.T) {
 	}
 	r.api.Runners["vm-1"] = &scaleset.RunnerReference{ID: 1, Name: "vm-1"}
 	r.api.RejectDuplicates = true
-	r.api.RemoveErr = scaleset.JobStillRunningError
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
 	r.api.Session.Info.Statistics = assigned(1)
 	r.start()
 
@@ -562,7 +562,7 @@ func TestOccupiedRunnerNameKeepsDaemonUpUntilItClears(t *testing.T) {
 		t.Fatalf("daemon exited with %v while the runner name was occupied", err)
 	}
 
-	r.api.RemoveErr = nil
+	r.api.SetRemoveErr(nil)
 	for i := 0; r.guest.get("vm-1") == nil; i++ {
 		if i > 5 {
 			t.Fatalf("no runner started once the registration was removable\nlog:\n%s", r.out.String())

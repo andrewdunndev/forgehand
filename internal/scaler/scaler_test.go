@@ -463,7 +463,7 @@ func TestRetiredRunnerNamesThePinInTheCause(t *testing.T) {
 
 func TestJitErrorFailsStartingSlot(t *testing.T) {
 	r := newRig(t)
-	r.api.JitErr = errors.New("404 installation: the App must be installed on the repo")
+	r.api.SetJitErr(errors.New("404 installation: the App must be installed on the repo"))
 	r.assigned(1)
 	r.waitFor("a blocked Acquire", func() bool { return len(r.fl.Waiting()) > 0 })
 	r.fl.Grant(r.fl.Waiting()[0], &fleet.FakeInstance{ID: "vm-1"})
@@ -545,8 +545,8 @@ func TestRunningJobLineDisarmsIdleTimerWithoutJobStarted(t *testing.T) {
 	if got := r.stateOfRunner("vm-1"); got != Busy {
 		t.Fatalf("slot is %s, want BUSY", got)
 	}
-	if len(r.api.Removed) != 0 {
-		t.Fatalf("runner removed under a running job: %v", r.api.Removed)
+	if len(r.api.RemovedRunners()) != 0 {
+		t.Fatalf("runner removed under a running job: %v", r.api.RemovedRunners())
 	}
 }
 
@@ -578,7 +578,7 @@ func TestRemoveRunnerErrorClasses(t *testing.T) {
 		r := newRig(t)
 		r.assigned(1)
 		r.listening("vm-1")
-		r.api.RemoveErr = scaleset.JobStillRunningError
+		r.api.SetRemoveErr(scaleset.JobStillRunningError)
 		r.advance(5 * time.Minute)
 		r.wantState("vm-1", Busy)
 		r.advance(time.Hour)
@@ -593,7 +593,7 @@ func TestRemoveRunnerErrorClasses(t *testing.T) {
 		r := newRig(t)
 		r.assigned(1)
 		r.listening("vm-1")
-		r.api.RemoveErr = scaleset.RunnerNotFoundError
+		r.api.SetRemoveErr(scaleset.RunnerNotFoundError)
 		r.advance(5 * time.Minute)
 		r.wantState("vm-1", Done)
 		r.wantReleased(1)
@@ -602,7 +602,7 @@ func TestRemoveRunnerErrorClasses(t *testing.T) {
 		r := newRig(t)
 		r.assigned(1)
 		r.listening("vm-1")
-		r.api.RemoveErr = errors.New("502")
+		r.api.SetRemoveErr(errors.New("502"))
 		r.advance(5 * time.Minute)
 		r.waitFor("a failed attempt", func() bool {
 			r.s.mu.Lock()
@@ -615,7 +615,7 @@ func TestRemoveRunnerErrorClasses(t *testing.T) {
 		if n := len(r.fl.Released()); n != 0 {
 			t.Fatalf("released %d times after a failed removal", n)
 		}
-		r.api.RemoveErr = nil
+		r.api.SetRemoveErr(nil)
 		r.assigned(1)
 		r.wantState("vm-1", Done)
 		r.wantReleased(1)
@@ -653,7 +653,7 @@ func TestLateStartedAndHooksDoNotMoveReapingSlotUp(t *testing.T) {
 	r := newRig(t)
 	r.assigned(1)
 	r.listening("vm-1")
-	r.api.RemoveErr = errors.New("502")
+	r.api.SetRemoveErr(errors.New("502"))
 	r.advance(5 * time.Minute)
 	r.waitFor("a failed attempt", func() bool { return strings.Contains(r.logged(), "retrying next poll") })
 	r.scale(started("vm-1"))
@@ -667,7 +667,7 @@ func TestLostRunnerKeepsVMUntilJobCompleted(t *testing.T) {
 	r := newRig(t)
 	r.assigned(1)
 	r.busy("vm-1")
-	r.api.RemoveErr = scaleset.JobStillRunningError
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
 	r.rn.get("vm-1").exit <- result{err: ErrLost}
 	r.wantState("vm-1", Busy)
 	r.waitFor("lost to be recorded", func() bool {
@@ -695,7 +695,7 @@ func TestLostBusyRunnerIsReapedOnceGitHubForgetsIt(t *testing.T) {
 	r := newRig(t)
 	r.assigned(1)
 	r.busy("vm-1")
-	r.api.RemoveErr = scaleset.JobStillRunningError
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
 	r.rn.get("vm-1").exit <- result{err: ErrLost}
 	r.waitFor("lost to be recorded", func() bool {
 		r.s.mu.Lock()
@@ -938,7 +938,7 @@ func TestRunnerExistsDoesNotCountTowardBreaker(t *testing.T) {
 	r.s.tick = time.Millisecond
 	r.api.Runners["vm-1"] = &scaleset.RunnerReference{ID: 1, Name: "vm-1"}
 	r.api.RejectDuplicates = true
-	r.api.RemoveErr = scaleset.JobStillRunningError
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
 	ctx, cancel := context.WithCancel(context.Background())
 	exit := make(chan error, 1)
 	go func() { exit <- r.s.Run(ctx) }()
@@ -964,7 +964,7 @@ func TestRunnerExistsBackoffIsFlatAndRecovers(t *testing.T) {
 	r := newRig(t)
 	r.api.Runners["vm-1"] = &scaleset.RunnerReference{ID: 1, Name: "vm-1"}
 	r.api.RejectDuplicates = true
-	r.api.RemoveErr = scaleset.JobStillRunningError
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
 	r.assigned(1)
 	for i := 1; i <= 3; i++ {
 		r.grantOccupied("vm-1")
@@ -975,7 +975,7 @@ func TestRunnerExistsBackoffIsFlatAndRecovers(t *testing.T) {
 		}
 		r.advance(time.Second)
 	}
-	r.api.RemoveErr = nil
+	r.api.SetRemoveErr(nil)
 	r.grantOccupied("vm-1")
 	r.wantReleased(4)
 	r.waitFor("the idle survivor to be deregistered", func() bool { return len(r.api.RemovedRunners()) == 1 })
@@ -985,7 +985,7 @@ func TestRunnerExistsBackoffIsFlatAndRecovers(t *testing.T) {
 
 func TestNonConflictJitErrorStillCountsTowardBreaker(t *testing.T) {
 	r := newRig(t)
-	r.api.JitErr = errors.New("500 server error")
+	r.api.SetJitErr(errors.New("500 server error"))
 	r.assigned(1)
 	r.grantOccupied("vm-1")
 	r.wantReleased(1)
