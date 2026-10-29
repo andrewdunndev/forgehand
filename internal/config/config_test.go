@@ -155,6 +155,26 @@ func TestPluginConfigIsOpaque(t *testing.T) {
 		t.Errorf("plugin_config = %v", pc)
 	}
 
+	for name, table := range map[string]string{
+		"header": "    [scalesets.autoscaler.plugin_config.instances.vm1]\n    address = \"10.0.0.2\"\n",
+		"inline": "    instances = { vm1 = { address = \"10.0.0.2\" } }\n",
+	} {
+		nested := strings.Replace(valid, "    pool = [\"a\", \"b\"]\n", "    pool = [\"a\", \"b\"]\n"+table, 1)
+		cfg, err := Parse([]byte(nested))
+		if err != nil {
+			t.Errorf("%s: nested plugin_config table rejected: %v", name, err)
+			continue
+		}
+		inst, _ := cfg.ScaleSets[0].Autoscaler.PluginConfig["instances"].(map[string]any)
+		vm, _ := inst["vm1"].(map[string]any)
+		if vm["address"] != "10.0.0.2" {
+			t.Errorf("%s: instances = %v", name, cfg.ScaleSets[0].Autoscaler.PluginConfig["instances"])
+		}
+	}
+	if _, err := Parse([]byte(strings.Replace(valid, "  [scalesets.runner]\n", "  [scalesets.runner]\n  extra = { a = 1 }\n", 1))); err == nil {
+		t.Error("a nested unknown key outside plugin_config was accepted")
+	}
+
 	bare := strings.Replace(valid, "    [scalesets.autoscaler.plugin_config]\n    address = \"10.0.0.1\"\n    pool = [\"a\", \"b\"]\n", "", 1)
 	if bare == valid {
 		t.Fatal("edit did not apply")

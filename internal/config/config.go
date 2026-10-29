@@ -189,6 +189,9 @@ func (s *ScaleSet) setDefaults() {
 func undecodedError(keys []toml.Key) error {
 	var errs []error
 	for _, k := range keys {
+		if inPluginConfig(k) {
+			continue
+		}
 		if rejectedKeys[k[len(k)-1]] {
 			errs = append(errs, fmt.Errorf("%s: forgehand runs one JIT runner per VM; remove this key", k))
 			continue
@@ -196,6 +199,12 @@ func undecodedError(keys []toml.Key) error {
 		errs = append(errs, fmt.Errorf("%s: unknown key; remove it", k))
 	}
 	return errors.Join(errs...)
+}
+
+// plugin_config belongs to the plugin; tables nested in it decode into the
+// map but are still reported as undecoded.
+func inPluginConfig(k toml.Key) bool {
+	return len(k) > 3 && k[0] == "scalesets" && k[1] == "autoscaler" && k[2] == "plugin_config"
 }
 
 func (c *Config) validate() error {
