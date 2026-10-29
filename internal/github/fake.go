@@ -19,8 +19,11 @@ type Fake struct {
 	Session *FakeSession
 
 	GetScaleSetErr error
-	RemoveErr      error
-	JitErr         error
+	ListErr        error
+	// Busy names runners whose removal fails with JobStillRunningError.
+	Busy      map[string]bool
+	RemoveErr error
+	JitErr    error
 	// RejectDuplicates makes a JIT mint fail with RunnerExistsError while
 	// the name is registered.
 	RejectDuplicates bool
@@ -70,7 +73,7 @@ func (f *Fake) MessageSessionClient(_ context.Context, _ int, owner string) (Ses
 	return f.Session, nil
 }
 
-func (f *Fake) GenerateJitRunnerConfig(_ context.Context, name string, _ int) (*scaleset.RunnerScaleSetJitRunnerConfig, error) {
+func (f *Fake) GenerateJitRunnerConfig(_ context.Context, name string, scaleSetID int) (*scaleset.RunnerScaleSetJitRunnerConfig, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.JitErr != nil {
@@ -81,7 +84,7 @@ func (f *Fake) GenerateJitRunnerConfig(_ context.Context, name string, _ int) (*
 	}
 	f.JitNames = append(f.JitNames, name)
 	f.nextID++
-	ref := &scaleset.RunnerReference{ID: f.nextID, Name: name}
+	ref := &scaleset.RunnerReference{ID: f.nextID, Name: name, RunnerScaleSetID: scaleSetID}
 	f.Runners[name] = ref
 	return &scaleset.RunnerScaleSetJitRunnerConfig{Runner: ref, EncodedJITConfig: "jit-" + name}, nil
 }
@@ -92,6 +95,19 @@ func (f *Fake) GetRunnerByName(_ context.Context, name string) (*scaleset.Runner
 	return f.Runners[name], nil
 }
 
+func (f *Fake) ListRunnerNames(context.Context) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ListErr != nil {
+		return nil, f.ListErr
+	}
+	names := make([]string, 0, len(f.Runners))
+	for name := range f.Runners {
+		names = append(names, name)
+	}
+	return names, nil
+}
+
 func (f *Fake) RemoveRunner(_ context.Context, id int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -100,6 +116,9 @@ func (f *Fake) RemoveRunner(_ context.Context, id int64) error {
 	}
 	for name, r := range f.Runners {
 		if int64(r.ID) == id {
+			if f.Busy[name] {
+				return scaleset.JobStillRunningError
+			}
 			delete(f.Runners, name)
 			f.Removed = append(f.Removed, id)
 			return nil
@@ -219,4 +238,20 @@ func (s *FakeSession) IsClosed() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.Closed
+}
+
+// SetBusy makes the runner called name refuse removal until it is cleared.
+func (f *Fake) SetBusy(name string, busy bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.Busy == nil {
+		f.Busy = map[string]bool{}
+	}
+	f.Busy[name] = busy
+}
+
+// RunnerNames returns the names of the registered runners.
+func (f *Fake) RunnerNames() []string {
+	names, _ := f.ListRunnerNames(context.Background())
+	return names
 }
