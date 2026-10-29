@@ -210,36 +210,19 @@ func (s *Scaler) Drain(ctx context.Context) error {
 	}
 }
 
-// Stop cancels every slot, in-flight jobs included, removes the GitHub
-// registrations of the runners that are not busy, and waits for the slot
-// goroutines until ctx ends.
+// Stop cancels every slot, in-flight jobs included, and waits for the slot
+// goroutines until ctx ends. The GitHub registrations of the cancelled slots
+// are left to Held's caller.
 func (s *Scaler) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	s.stopped = true
-	var registered []string
 	for _, sl := range s.slots {
-		switch sl.state {
-		case Starting, Listening, Reaping:
-			registered = append(registered, sl.name)
-		}
 		s.terminate(sl, Cancelled)
 	}
 	s.mu.Unlock()
 
 	done := make(chan struct{})
 	go func() {
-		var wg sync.WaitGroup
-		for _, name := range registered {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				err := RemoveRunner(ctx, s.registry, name)
-				if err != nil && !errors.Is(err, scaleset.RunnerNotFoundError) && !errors.Is(err, scaleset.JobStillRunningError) {
-					s.log.Warn("removing runner at stop failed", "runner", name, "error", err)
-				}
-			}()
-		}
-		wg.Wait()
 		s.wg.Wait()
 		close(done)
 	}()
@@ -249,6 +232,21 @@ func (s *Scaler) Stop(ctx context.Context) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+}
+
+// Held returns the runner names of slots that have not ended. A name is set
+// before its JIT config is minted, so a runner registered by this scaler is
+// held from before it exists until its slot ends.
+func (s *Scaler) Held() map[string]bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	held := map[string]bool{}
+	for _, sl := range s.slots {
+		if sl.name != "" && !sl.state.Terminal() {
+			held[sl.name] = true
+		}
+	}
+	return held
 }
 
 func (s *Scaler) evaluate() {

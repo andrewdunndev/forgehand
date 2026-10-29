@@ -55,7 +55,8 @@ type guestRun struct {
 }
 
 func (g *guest) Run(ctx context.Context, _ fleet.Instance, name string, h scaler.Hooks) (int, error) {
-	if _, err := g.api.GenerateJitRunnerConfig(ctx, name, 1); err != nil {
+	set, _ := g.api.GetRunnerScaleSet(ctx, 0, "example")
+	if _, err := g.api.GenerateJitRunnerConfig(ctx, name, set.ID); err != nil {
 		return 0, err
 	}
 	r := &guestRun{hooks: h, exit: make(chan int, 1)}
@@ -144,7 +145,7 @@ func newRig(t *testing.T, cfg *config.Config) *rig {
 		newRunner: func(config.ScaleSet, github.API, int, hclog.Logger) scaler.Runner { return r.guest },
 	}, log)
 	r.d.reconnectMin, r.d.reconnectMax = time.Millisecond, 4*time.Millisecond
-	r.d.sweepInterval = time.Millisecond
+	r.d.reconcileInterval = time.Millisecond
 	return r
 }
 
@@ -320,6 +321,41 @@ func TestSIGTERMStopsInsideShutdownTimeoutAndKillsJobs(t *testing.T) {
 	}
 }
 
+func TestSIGTERMRemovesIdleRegistrationsAndLeavesBusyOnes(t *testing.T) {
+	r := newRig(t, testConfig(5))
+	r.api.Session.Info.Statistics = assigned(2)
+	r.start()
+	_, a := r.boot("vm-a")
+	_, b := r.boot("vm-b")
+	a.hooks.Listening()
+	b.hooks.Listening()
+	b.hooks.RunningJob()
+	r.api.SetBusy("vm-b", true)
+
+	r.sigs <- syscall.SIGTERM
+	if err, ok := r.result(3 * time.Second); !ok || err != nil {
+		t.Fatalf("run = %v (returned %v)", err, ok)
+	}
+	if got := r.api.RunnerNames(); len(got) != 1 || got[0] != "vm-b" {
+		t.Errorf("registered after stop = %v, want only the busy vm-b", got)
+	}
+}
+
+func TestStartRemovesLeftoverRegistrationsBeforeListening(t *testing.T) {
+	r := newRig(t, testConfig(5))
+	r.api.Sets["example"] = &scaleset.RunnerScaleSet{ID: 9, Name: "example", Labels: []scaleset.Label{{Name: "example"}, {Name: "self-hosted"}}, RunnerSetting: scaleset.RunnerSetting{DisableUpdate: true}}
+	for i := range 5 {
+		_, _ = r.api.GenerateJitRunnerConfig(context.Background(), fmt.Sprintf("old-%d", i), 9)
+	}
+	r.start()
+	r.wait("the session", func() bool { return r.sessions() > 0 })
+	if got := r.api.RunnerNames(); len(got) != 0 {
+		t.Errorf("registered at listen = %v", got)
+	}
+	r.sigs <- syscall.SIGTERM
+	_, _ = r.result(3 * time.Second)
+}
+
 // hangingAPI blocks scale set lookup until its context is cancelled.
 type hangingAPI struct{ *github.Fake }
 
@@ -383,36 +419,10 @@ func TestListenerReconnectsWithTheSameOwner(t *testing.T) {
 	_, _ = r.result(3 * time.Second)
 }
 
-func TestLeftoverRunnerIsRemovedOnceItStopsReportingAJob(t *testing.T) {
-	r := newRig(t, testConfig(5))
-	r.start()
-	r.wait("the fleet", func() bool { n, _ := r.fleetOptions(); return n == 1 })
-	_, opts := r.fleetOptions()
-
-	jit, _ := r.api.GenerateJitRunnerConfig(context.Background(), "old-vm", 1)
-	r.api.SetRemoveErr(scaleset.JobStillRunningError)
-	go opts.OnLeftover("old-vm")
-	time.Sleep(20 * time.Millisecond)
-	if n := len(r.api.RemovedRunners()); n != 0 {
-		t.Fatal("removed a runner that still reports a job")
-	}
-	r.api.SetRemoveErr(nil)
-	r.wait("the runner removed", func() bool {
-		ref, _ := r.api.GetRunnerByName(context.Background(), "old-vm")
-		return ref == nil
-	})
-	if got := r.api.RemovedRunners(); len(got) != 1 || got[0] != int64(jit.Runner.ID) {
-		t.Errorf("removed %v", got)
-	}
-	r.sigs <- syscall.SIGTERM
-	_, _ = r.result(3 * time.Second)
-}
-
 func TestPreexistingAndUnexpectedInstancesAreDeletedWithTheirRunners(t *testing.T) {
 	r := newRig(t, testConfig(5))
 	group := &dummy.InstanceGroup{MaxSize: 4}
 	old := group.AddInstance(provider.StateRunning)
-	_, _ = r.api.GenerateJitRunnerConfig(context.Background(), old, 1)
 	r.d.deps.startFleet = func(_ config.Autoscaler, o fleet.Options) (fleet.Fleet, error) {
 		return fleet.New(group, config.Autoscaler{
 			MaxInstances:                2,
@@ -423,6 +433,9 @@ func TestPreexistingAndUnexpectedInstancesAreDeletedWithTheirRunners(t *testing.
 		}, o, taskscaler.WithAcquireDelay(5*time.Millisecond))
 	}
 	r.start()
+	r.wait("the scale set", func() bool { set, _ := r.api.GetRunnerScaleSet(context.Background(), 0, "example"); return set != nil })
+	set, _ := r.api.GetRunnerScaleSet(context.Background(), 0, "example")
+	_, _ = r.api.GenerateJitRunnerConfig(context.Background(), old, set.ID)
 	gone := func(id string) func() bool {
 		return func() bool {
 			s := stateOf(group, id)
@@ -433,7 +446,7 @@ func TestPreexistingAndUnexpectedInstancesAreDeletedWithTheirRunners(t *testing.
 	r.wait("the pre-existing instance and its runner gone", gone(old))
 
 	stray := group.AddInstance(provider.StateRunning)
-	_, _ = r.api.GenerateJitRunnerConfig(context.Background(), stray, 1)
+	_, _ = r.api.GenerateJitRunnerConfig(context.Background(), stray, set.ID)
 	r.wait("the unexpected instance and its runner gone", gone(stray))
 
 	r.sigs <- syscall.SIGTERM

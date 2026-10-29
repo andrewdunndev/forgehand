@@ -26,11 +26,10 @@ import (
 )
 
 const (
-	reconnectMin  = 5 * time.Second
-	reconnectMax  = 60 * time.Second
-	closeTimeout  = 10 * time.Second
-	sweepInterval = 10 * time.Second
-	sweepAttempts = 30
+	reconnectMin      = 5 * time.Second
+	reconnectMax      = 60 * time.Second
+	closeTimeout      = 10 * time.Second
+	reconcileInterval = 30 * time.Second
 )
 
 // deps are the outside world the daemon is built on.
@@ -61,8 +60,7 @@ type daemon struct {
 	log  hclog.Logger
 
 	reconnectMin, reconnectMax time.Duration
-	sweepInterval              time.Duration
-	sweepAttempts              int
+	reconcileInterval          time.Duration
 	metricsAddr                string
 	now                        func() time.Time
 }
@@ -71,7 +69,7 @@ func newDaemon(cfg *config.Config, d deps, log hclog.Logger) *daemon {
 	return &daemon{
 		cfg: cfg, deps: d, log: log,
 		reconnectMin: reconnectMin, reconnectMax: reconnectMax,
-		sweepInterval: sweepInterval, sweepAttempts: sweepAttempts,
+		reconcileInterval: reconcileInterval,
 	}
 }
 
@@ -110,6 +108,9 @@ type unit struct {
 	log      hclog.Logger
 	d        *daemon
 	listened chan struct{}
+
+	reconciler reconciler
+	reconciled chan struct{}
 }
 
 func (d *daemon) start(ctx context.Context, cfg config.ScaleSet, metrics prometheus.Registerer) (*unit, error) {
@@ -133,13 +134,13 @@ func (d *daemon) start(ctx context.Context, cfg config.ScaleSet, metrics prometh
 		log:      log,
 		d:        d,
 		listened: make(chan struct{}),
+
+		reconciled: make(chan struct{}),
 	}
-	sw := sweeper{reg: api, log: log, interval: d.sweepInterval, attempts: d.sweepAttempts}
 	u.fleet, err = d.deps.startFleet(cfg.Autoscaler, fleet.Options{
-		Logger:     log,
-		Name:       cfg.Name,
-		Metrics:    metrics,
-		OnLeftover: func(id string) { sw.remove(ctx, id) },
+		Logger:  log,
+		Name:    cfg.Name,
+		Metrics: metrics,
 	})
 	if err != nil {
 		return nil, err
@@ -152,6 +153,9 @@ func (d *daemon) start(ctx context.Context, cfg config.ScaleSet, metrics prometh
 		Logger:                 log,
 		Now:                    d.now,
 	}, u.sessions, api, u.fleet, d.deps.newRunner(cfg, api, set.ID, log))
+	u.reconciler = reconciler{api: api, setID: set.ID, held: u.scaler.Held, log: log}
+	u.reconciler.pass(ctx)
+	go u.reconciler.run(ctx, d.reconcileInterval, u.reconciled)
 	return u, nil
 }
 
@@ -341,8 +345,8 @@ func (d *daemon) drain(units []*unit, sigs <-chan os.Signal, fatal <-chan error)
 	}
 }
 
-// stop cancels every slot, shuts the fleets down and waits for the listeners,
-// all within shutdown_timeout.
+// stop cancels every slot, shuts the fleets down, waits for the listeners and
+// removes the registrations nothing holds any more, all within shutdown_timeout.
 func (d *daemon) stop(units []*unit, stopListening context.CancelFunc) error {
 	stopListening()
 	timeout := d.cfg.ShutdownDuration()
@@ -363,6 +367,11 @@ func (d *daemon) stop(units []*unit, stopListening context.CancelFunc) error {
 				u.fleet.Shutdown(ctx)
 				select {
 				case <-u.listened:
+				case <-ctx.Done():
+				}
+				select {
+				case <-u.reconciled:
+					u.reconciler.pass(ctx)
 				case <-ctx.Done():
 				}
 			}()
