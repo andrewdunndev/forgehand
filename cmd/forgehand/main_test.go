@@ -206,3 +206,15 @@ func TestResolveVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestVersionCommandUsesModuleVersion(t *testing.T) {
+	old := readBuildInfo
+	t.Cleanup(func() { readBuildInfo = old })
+	readBuildInfo = func() (*debug.BuildInfo, bool) {
+		return &debug.BuildInfo{Main: debug.Module{Version: "v0.1.0"}}, true
+	}
+	var out, errb bytes.Buffer
+	if code := execute([]string{"version"}, &out, &errb); code != 0 || strings.TrimSpace(out.String()) != "forgehand v0.1.0" {
+		t.Errorf("code %d, out %q", code, out.String())
+	}
+}

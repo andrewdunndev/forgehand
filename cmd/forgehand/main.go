@@ -20,9 +20,11 @@ import (
 // Version is stamped at build time with -ldflags "-X main.Version=...".
 var Version = "dev"
 
+var readBuildInfo = debug.ReadBuildInfo
+
 // version is the stamped Version, or the main module version of a go install build.
 func version() string {
-	return resolveVersion(Version, debug.ReadBuildInfo)
+	return resolveVersion(Version, readBuildInfo)
 }
 
 func resolveVersion(stamped string, read func() (*debug.BuildInfo, bool)) string {
