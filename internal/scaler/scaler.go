@@ -593,13 +593,26 @@ func (s *Scaler) settled() {
 }
 
 // fail ends a slot as FAILED and backs spawning off. The fifth failure in a
-// row trips the breaker.
+// row trips the breaker. A slot that reached an instance may have minted a JIT
+// config, so its registration is removed on a best-effort basis.
 func (s *Scaler) fail(sl *slot, cause string) {
 	if !s.terminate(sl, Failed) {
 		return
 	}
 	s.failures++
 	s.log.Error("slot failed", "slot", sl.key, "runner", sl.name, "cause", cause)
+	if sl.name != "" {
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			ctx, cancel := context.WithTimeout(context.Background(), reapTimeout)
+			defer cancel()
+			err := RemoveRunner(ctx, s.registry, sl.name)
+			if err != nil && !errors.Is(err, scaleset.RunnerNotFoundError) && !errors.Is(err, scaleset.JobStillRunningError) {
+				s.log.Warn("removing failed slot's runner failed", "runner", sl.name, "error", err)
+			}
+		}()
+	}
 	s.nextSpawn = s.now().Add(backoffBase << (s.failures - 1))
 	if s.failures >= breakerLimit && s.fatal == nil {
 		s.fatal = fmt.Errorf("%d consecutive slots failed, last: %s", s.failures, cause)

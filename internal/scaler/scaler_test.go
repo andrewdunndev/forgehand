@@ -471,6 +471,15 @@ func TestJitErrorFailsStartingSlot(t *testing.T) {
 	r.wantReleased(1)
 }
 
+func TestFailedSlotRemovesItsRegistration(t *testing.T) {
+	r := newRig(t)
+	r.assigned(1)
+	r.boot("vm-1")
+	r.exit("vm-1", 1)
+	r.wantState("vm-1", Failed)
+	r.waitFor("the registration to be removed", func() bool { return len(r.api.RemovedRunners()) == 1 })
+}
+
 func TestBusyRunnerExitWithoutCompletionIsDoneAfterGrace(t *testing.T) {
 	r := newRig(t)
 	r.assigned(1)
