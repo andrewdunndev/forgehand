@@ -117,6 +117,9 @@ func TestParseRejects(t *testing.T) {
 		{"unknown key", func(s string) string {
 			return strings.Replace(s, "max_instances = 2", "max_instances = 2\n  state_storage = true", 1)
 		}, "state_storage: unknown key"},
+		{"negative listen_timeout", func(s string) string {
+			return strings.Replace(s, `listen_timeout = "3m"`, `listen_timeout = "-3m"`, 1)
+		}, "runner timeouts must be positive"},
 		{"shutdown_timeout string", func(s string) string {
 			return strings.Replace(s, "shutdown_timeout = 30", `shutdown_timeout = "30s"`, 1)
 		}, "shutdown_timeout is integer seconds, for example 30; got 30s"},
