@@ -14,7 +14,7 @@ import (
 const (
 	defaultShutdownTimeout        = 30
 	defaultListenTimeout          = Duration(3 * time.Minute)
-	defaultIdleRunnerTimeout      = Duration(5 * time.Minute)
+	defaultIdleTimeout            = Duration(5 * time.Minute)
 	defaultInstanceAcquireTimeout = Duration(15 * time.Minute)
 )
 
@@ -73,9 +73,9 @@ type GitHubApp struct {
 }
 
 type Runner struct {
-	Dir               string   `toml:"dir"`
-	ListenTimeout     Duration `toml:"listen_timeout"`
-	IdleRunnerTimeout Duration `toml:"idle_runner_timeout"`
+	Dir           string   `toml:"dir"`
+	ListenTimeout Duration `toml:"listen_timeout"`
+	IdleTimeout   Duration `toml:"idle_timeout"`
 }
 
 type Autoscaler struct {
@@ -173,8 +173,8 @@ func (s *ScaleSet) setDefaults() {
 	if s.Runner.ListenTimeout == 0 {
 		s.Runner.ListenTimeout = defaultListenTimeout
 	}
-	if s.Runner.IdleRunnerTimeout == 0 {
-		s.Runner.IdleRunnerTimeout = defaultIdleRunnerTimeout
+	if s.Runner.IdleTimeout == 0 {
+		s.Runner.IdleTimeout = defaultIdleTimeout
 	}
 	if s.Autoscaler.InstanceAcquireTimeout == 0 {
 		s.Autoscaler.InstanceAcquireTimeout = defaultInstanceAcquireTimeout
@@ -260,7 +260,7 @@ func (s *ScaleSet) validate(at string, fail func(string, ...any)) {
 	if s.Runner.Dir == "" {
 		fail("%s: runner.dir is required: the directory of the actions runner in the guest image", at)
 	}
-	if s.Runner.ListenTimeout < 0 || s.Runner.IdleRunnerTimeout < 0 {
+	if s.Runner.ListenTimeout < 0 || s.Runner.IdleTimeout < 0 {
 		fail("%s: runner timeouts must be positive durations such as \"3m\"", at)
 	}
 

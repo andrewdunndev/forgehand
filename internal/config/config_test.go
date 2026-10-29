@@ -22,7 +22,7 @@ labels = ["self-hosted", "example"]
   [scalesets.runner]
   dir = "/opt/actions-runner"
   listen_timeout = "3m"
-  idle_runner_timeout = "5m"
+  idle_timeout = "5m"
   [scalesets.autoscaler]
   plugin = "fleeting-plugin-static"
   max_instances = 2
@@ -62,7 +62,7 @@ func TestParseDefaults(t *testing.T) {
 		"log_level = \"info\"\n", "",
 		"shutdown_timeout = 30\n", "",
 		"  listen_timeout = \"3m\"\n", "",
-		"  idle_runner_timeout = \"5m\"\n", "",
+		"  idle_timeout = \"5m\"\n", "",
 		"  instance_acquire_timeout = \"15m\"\n", "",
 	).Replace(valid)
 	cfg, err := Parse([]byte(min))
@@ -71,14 +71,14 @@ func TestParseDefaults(t *testing.T) {
 	}
 	s := cfg.ScaleSets[0]
 	if cfg.ShutdownTimeout != 30 || cfg.LogLevel != "info" ||
-		s.Runner.ListenTimeout != Duration(3*time.Minute) || s.Runner.IdleRunnerTimeout != Duration(5*time.Minute) ||
+		s.Runner.ListenTimeout != Duration(3*time.Minute) || s.Runner.IdleTimeout != Duration(5*time.Minute) ||
 		s.Autoscaler.InstanceAcquireTimeout != Duration(15*time.Minute) {
 		t.Errorf("defaults not applied: %+v", cfg)
 	}
 }
 
 func TestBareIntegerDurationIsRejected(t *testing.T) {
-	for _, key := range []string{"listen_timeout", "idle_runner_timeout", "instance_acquire_timeout", "timeout"} {
+	for _, key := range []string{"listen_timeout", "idle_timeout", "instance_acquire_timeout", "timeout"} {
 		old := key + " = \""
 		i := strings.Index(valid, old)
 		if i < 0 {
@@ -111,6 +111,9 @@ func TestParseRejects(t *testing.T) {
 		{"delete_instances_on_shutdown", func(s string) string {
 			return strings.Replace(s, "max_instances = 2", "max_instances = 2\n  delete_instances_on_shutdown = true", 1)
 		}, "scalesets.autoscaler.delete_instances_on_shutdown: forgehand always deletes the VMs when it stops; remove this key"},
+		{"idle_runner_timeout", func(s string) string {
+			return strings.Replace(s, "idle_timeout", "idle_runner_timeout", 1)
+		}, "idle_runner_timeout: unknown key"},
 		{"unknown key", func(s string) string {
 			return strings.Replace(s, "max_instances = 2", "max_instances = 2\n  state_storage = true", 1)
 		}, "state_storage: unknown key"},

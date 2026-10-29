@@ -33,7 +33,7 @@ func testConfig(shutdown int) *config.Config {
 			Name:   "example",
 			URL:    "https://github.com/example/Example",
 			Labels: []string{"self-hosted", "example"},
-			Runner: config.Runner{ListenTimeout: config.Duration(time.Minute), IdleRunnerTimeout: config.Duration(time.Minute)},
+			Runner: config.Runner{ListenTimeout: config.Duration(time.Minute), IdleTimeout: config.Duration(time.Minute)},
 			Autoscaler: config.Autoscaler{
 				MaxInstances:           2,
 				InstanceAcquireTimeout: config.Duration(time.Minute),

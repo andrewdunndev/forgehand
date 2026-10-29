@@ -148,7 +148,7 @@ func newRig(t *testing.T) *rig {
 	s := New(Config{
 		MaxInstances:           2,
 		ListenTimeout:          3 * time.Minute,
-		IdleRunnerTimeout:      5 * time.Minute,
+		IdleTimeout:            5 * time.Minute,
 		InstanceAcquireTimeout: 15 * time.Minute,
 		Logger:                 hclog.New(&hclog.LoggerOptions{Output: out, Level: hclog.Debug}),
 	}, api.Session, loggedRegistry{api, log}, loggedFleet{fl, log}, rn)

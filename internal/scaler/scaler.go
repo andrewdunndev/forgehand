@@ -61,7 +61,7 @@ type Registry interface {
 type Config struct {
 	MaxInstances           int
 	ListenTimeout          time.Duration
-	IdleRunnerTimeout      time.Duration
+	IdleTimeout            time.Duration
 	InstanceAcquireTimeout time.Duration
 	Logger                 hclog.Logger
 	Now                    func() time.Time
@@ -265,7 +265,7 @@ func (s *Scaler) evaluate() {
 				go s.listenTimeout(sl)
 			}
 		case Listening:
-			if now.Sub(sl.since) >= s.cfg.IdleRunnerTimeout {
+			if now.Sub(sl.since) >= s.cfg.IdleTimeout {
 				s.toReaping(sl)
 			}
 		case Busy:

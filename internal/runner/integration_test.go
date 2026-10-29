@@ -58,7 +58,7 @@ func TestOneJobThroughTaskscalerAndTheDummyPlugin(t *testing.T) {
 	sc := scaler.New(scaler.Config{
 		MaxInstances:           2,
 		ListenTimeout:          time.Minute,
-		IdleRunnerTimeout:      time.Minute,
+		IdleTimeout:            time.Minute,
 		InstanceAcquireTimeout: time.Minute,
 	}, api.Session, api, fl, rn)
 	t.Cleanup(func() {
