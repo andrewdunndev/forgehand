@@ -12,8 +12,9 @@ forgehand listens to a GitHub Actions scale set as a GitHub App. For each job it
 takes a fresh VM from a [fleeting](https://gitlab.com/gitlab-org/fleeting/fleeting)
 plugin, starts a just-in-time runner on it over SSH, and releases the VM when the
 job ends. [taskscaler](https://gitlab.com/gitlab-org/fleeting/taskscaler) drives
-capacity, so the `[runners.autoscaler]` settings from gitlab-runner carry over
-and any fleeting plugin should fit.
+capacity, so most `[runners.autoscaler]` settings from gitlab-runner carry over
+and any fleeting plugin should fit. `capacity_per_instance` and `max_use_count` are
+rejected, because each VM runs one job.
 
 ## Status
 
@@ -26,6 +27,7 @@ configuration schema is still changing.
 - A GitHub App installed on the repository, with Administration
   read and write. You need its client ID, its installation ID and a private key.
 - A fleeting plugin for your hypervisor or cloud, installed on the host.
+  [fleeting-plugin-libvirt](https://gitlab.com/dunn.dev/fleeting-plugin-libvirt) is the reference plugin.
 - A guest image with:
   - POSIX `sh` and `setsid`
   - [actions/runner](https://github.com/actions/runner) unpacked at `runner.dir`, writable by `connector_config.username`
@@ -39,8 +41,11 @@ configuration schema is still changing.
 go install gitlab.com/dunn.dev/forgehand/cmd/forgehand@latest
 ```
 
+Release binaries for linux amd64 and arm64 are on the
+[releases page](https://gitlab.com/dunn.dev/forgehand/-/releases).
+
 Or build from source with `mise install && just build`, which writes
-`bin/forgehand`.
+`bin/forgehand`. Install plugins with `FLEETING_PLUGIN_PATH` set to the directory the unit sets, or set `plugin` to a binary path.
 
 ## Quickstart
 
