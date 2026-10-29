@@ -38,5 +38,9 @@ func (s sweeper) remove(ctx context.Context, id string) {
 		case <-time.After(s.interval):
 		}
 	}
+	if errors.Is(err, scaleset.JobStillRunningError) {
+		s.log.Info("a leftover instance's runner still reports a job: GitHub removes it when the job ends", "instance", id)
+		return
+	}
 	s.log.Error("could not remove the runner of a leftover instance: remove it in the repository's runner settings", "instance", id, "error", err)
 }
