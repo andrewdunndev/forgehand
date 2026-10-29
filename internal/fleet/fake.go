@@ -129,3 +129,11 @@ func (f *Fake) IsShutdown() bool {
 	defer f.mu.Unlock()
 	return f.down
 }
+
+// Leftover reports an instance from an earlier run, as the real fleet does
+// when it rejects one at start.
+func (f *Fake) Leftover(id string) {
+	if f.opts.OnLeftover != nil {
+		f.opts.OnLeftover(id)
+	}
+}

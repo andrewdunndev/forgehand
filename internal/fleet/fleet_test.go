@@ -164,44 +164,73 @@ func TestAcquireFollowsDemand(t *testing.T) {
 	}
 }
 
-func TestPreexistingInstanceIsRejectedAndDeleted(t *testing.T) {
+func TestPreexistingInstanceIsRejectedAndReported(t *testing.T) {
 	group := &dummy.InstanceGroup{MaxSize: 4}
 	old := group.AddInstance(provider.StateRunning)
-	newFleet(t, group, Options{})
 
+	left := make(chan string, 4)
+	f := newFleet(t, group, Options{OnLeftover: func(id string) { left <- id }})
+	_ = f
+
+	select {
+	case id := <-left:
+		if id != old {
+			t.Errorf("leftover = %s, want %s", id, old)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("pre-existing instance not reported")
+	}
 	eventually(t, "pre-existing instance deleted", func() bool {
 		s := states(group)[old]
 		return s == provider.StateDeleting || s == provider.StateDeleted
 	})
 }
 
-func TestUnexpectedInstanceIsRejectedAndDeleted(t *testing.T) {
+func TestUnexpectedInstanceIsRejectedAndReported(t *testing.T) {
 	group := &dummy.InstanceGroup{MaxSize: 4}
-	newFleet(t, group, Options{})
+	left := make(chan string, 4)
+	newFleet(t, group, Options{OnLeftover: func(id string) { left <- id }})
 
 	stray := group.AddInstance(provider.StateRunning)
-	eventually(t, "unexpected instance deleted", func() bool {
-		s := states(group)[stray]
-		return s == provider.StateDeleting || s == provider.StateDeleted
-	})
+	select {
+	case id := <-left:
+		if id != stray {
+			t.Errorf("leftover = %s, want %s", id, stray)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("unexpected instance not reported")
+	}
 }
 
 func TestUpFunc(t *testing.T) {
 	tests := []struct {
-		name   string
-		in     taskscaler.UpFuncInstance
-		reject bool
+		name     string
+		in       taskscaler.UpFuncInstance
+		reject   bool
+		leftover bool
 	}{
-		{"requested", taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseRequested}, false},
-		{"preexisted", taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CausePreexisted}, true},
-		{"unexpected", taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseUnexpected}, true},
-		{"live acquisitions", taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseRequested, Acquisitions: []string{"k"}}, true},
+		{"requested", taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseRequested}, false, false},
+		{"preexisted", taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CausePreexisted}, true, true},
+		{"unexpected", taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseUnexpected}, true, true},
+		{"live acquisitions", taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseRequested, Acquisitions: []string{"k"}}, true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := upFunc(context.Background(), config.Autoscaler{})(nil, tt.in)
+			got := make(chan string, 1)
+			up := upFunc(context.Background(), config.Autoscaler{}, func(id string) { got <- id })
+			err := up(nil, tt.in)
 			if (err != nil) != tt.reject {
 				t.Fatalf("err = %v, reject = %v", err, tt.reject)
+			}
+			select {
+			case id := <-got:
+				if !tt.leftover || id != "i" {
+					t.Errorf("leftover reported for %q", id)
+				}
+			case <-time.After(100 * time.Millisecond):
+				if tt.leftover {
+					t.Error("leftover not reported")
+				}
 			}
 		})
 	}

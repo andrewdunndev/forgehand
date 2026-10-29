@@ -876,26 +876,39 @@ func TestStopCancelsEverySlotWithinTheBound(t *testing.T) {
 	r.wantReleased(1)
 }
 
-func TestHeldNamesCoverLiveSlotsOnly(t *testing.T) {
+func TestStopRemovesRegistrationsOfRunnersThatAreNotBusy(t *testing.T) {
 	r := newRig(t)
 	r.assigned(2)
 	r.busy("vm-1")
 	r.waitFor("second Acquire", func() bool { return len(r.fl.Waiting()) == 1 })
 	r.listening("vm-2")
 
-	if held := r.s.Held(); len(held) != 2 || !held["vm-1"] || !held["vm-2"] {
-		t.Fatalf("held = %v, want vm-1 and vm-2", held)
-	}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	if err := r.s.Stop(ctx); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if held := r.s.Held(); len(held) != 0 {
-		t.Errorf("held = %v after Stop", held)
+	if ref, _ := r.api.GetRunnerByName(ctx, "vm-2"); ref != nil {
+		t.Error("idle runner vm-2 is still registered after Stop")
 	}
-	if n := len(r.api.RemovedRunners()); n != 0 {
-		t.Errorf("Stop removed %d registrations itself", n)
+	if ref, _ := r.api.GetRunnerByName(ctx, "vm-1"); ref == nil {
+		t.Error("busy runner vm-1 was removed by Stop")
+	}
+}
+
+func TestStopLogsRegistrationRemovalFailures(t *testing.T) {
+	r := newRig(t)
+	r.assigned(1)
+	r.listening("vm-1")
+	r.api.SetRemoveErr(errors.New("github down"))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := r.s.Stop(ctx); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if got := r.logged(); !strings.Contains(got, "removing runner at stop failed") || !strings.Contains(got, "github down") {
+		t.Errorf("failure not logged:\n%s", got)
 	}
 }
 

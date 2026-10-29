@@ -43,6 +43,10 @@ type Options struct {
 	// Metrics, when Metrics is set.
 	Name    string
 	Metrics prometheus.Registerer
+	// OnLeftover receives the id of an instance from an earlier daemon run
+	// that was rejected and is being deleted, so its GitHub runner can be
+	// removed. It runs on its own goroutine.
+	OnLeftover func(id string)
 }
 
 type fleetImpl struct {
@@ -95,7 +99,7 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 	}
 	group = removeOnHeartbeatFailure{InstanceGroup: group, log: opts.Logger}
 	ctx, cancel := context.WithCancel(context.Background())
-	tsOpts := append(mapped(cfg, settings, upFunc(ctx, cfg)), extra...)
+	tsOpts := append(mapped(cfg, settings, upFunc(ctx, cfg, opts.OnLeftover)), extra...)
 	if opts.Logger != nil {
 		tsOpts = append(tsOpts, taskscaler.WithLogger(opts.Logger.Named("taskscaler")))
 	}
@@ -224,9 +228,12 @@ func settings(cfg config.Autoscaler) (provider.Settings, error) {
 // Only an instance this run requested is usable: one that existed at start or
 // appeared out of band carries an unknown runner and job, so it is rejected
 // and deleted.
-func upFunc(ctx context.Context, cfg config.Autoscaler) taskscaler.UpFunc {
+func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string)) taskscaler.UpFunc {
 	return func(_ taskscaler.Taskscaler, in taskscaler.UpFuncInstance) error {
 		if in.Cause == fleeting.CausePreexisted || in.Cause == fleeting.CauseUnexpected || len(in.Acquisitions) > 0 {
+			if onLeftover != nil {
+				go onLeftover(in.ID)
+			}
 			return fmt.Errorf("instance %s is %s: removing it for safety", in.ID, in.Cause)
 		}
 		if cfg.InstanceReadyCommand == "" {

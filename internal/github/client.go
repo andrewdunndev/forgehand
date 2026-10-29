@@ -16,7 +16,6 @@ var _ API = (*client)(nil)
 
 type client struct {
 	*scaleset.Client
-	*lister
 }
 
 // New returns the API backed by a GitHub App installation. The transport pings
@@ -46,11 +45,7 @@ func New(cfg config.ScaleSet, version string) (API, error) {
 	if err != nil {
 		return nil, fmt.Errorf("github client: %w", err)
 	}
-	ls, err := newLister(cfg.URL, apiRoot(cfg.URL), cfg.GitHubApp.ClientID, cfg.GitHubApp.InstallationID, key, hc.Transport)
-	if err != nil {
-		return nil, fmt.Errorf("github client: %w", err)
-	}
-	return &client{c, ls}, nil
+	return &client{c}, nil
 }
 
 func (c *client) MessageSessionClient(ctx context.Context, scaleSetID int, owner string) (Session, error) {

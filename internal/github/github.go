@@ -30,8 +30,6 @@ type API interface {
 	GenerateJitRunnerConfig(ctx context.Context, name string, scaleSetID int) (*scaleset.RunnerScaleSetJitRunnerConfig, error)
 	GetRunnerByName(ctx context.Context, name string) (*scaleset.RunnerReference, error)
 	RemoveRunner(ctx context.Context, runnerID int64) error
-	// ListRunnerNames returns every runner name registered on the repository.
-	ListRunnerNames(ctx context.Context) ([]string, error)
 }
 
 // LookupScaleSet returns the named scale set, or nil when it does not exist.
