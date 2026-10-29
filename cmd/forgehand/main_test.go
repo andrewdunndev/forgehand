@@ -116,7 +116,7 @@ func TestCheck(t *testing.T) {
 
 	t.Run("existing set", func(t *testing.T) {
 		api := github.NewFake()
-		api.Sets["example"] = &scaleset.RunnerScaleSet{ID: 9, Labels: []scaleset.Label{{Name: "self-hosted"}, {Name: "example"}}}
+		api.Sets["example"] = &scaleset.RunnerScaleSet{ID: 9, Labels: []scaleset.Label{{Name: "self-hosted"}, {Name: "example"}}, RunnerSetting: scaleset.RunnerSetting{DisableUpdate: true}}
 		var out bytes.Buffer
 		if err := checkDaemon(t, api, nil).check(ctx, &out); err != nil || !strings.Contains(out.String(), "scale set 9 exists") {
 			t.Errorf("err = %v, out = %q", err, out.String())

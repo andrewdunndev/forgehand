@@ -201,7 +201,7 @@ func assigned(n int) *scaleset.RunnerScaleSetStatistic {
 
 func TestExistingSetIsNotRecreatedAndStopDeletesNothing(t *testing.T) {
 	r := newRig(t, testConfig(5))
-	r.api.Sets["example"] = &scaleset.RunnerScaleSet{ID: 9, Name: "example", Labels: []scaleset.Label{{Name: "example"}, {Name: "self-hosted"}}}
+	r.api.Sets["example"] = &scaleset.RunnerScaleSet{ID: 9, Name: "example", Labels: []scaleset.Label{{Name: "example"}, {Name: "self-hosted"}}, RunnerSetting: scaleset.RunnerSetting{DisableUpdate: true}}
 	r.start()
 	r.wait("the session", func() bool { return r.sessions() > 0 })
 
@@ -247,6 +247,19 @@ func TestLabelDriftRefusesToStartNamingTheRename(t *testing.T) {
 	started, _ := r.fleetOptions()
 	if started != 0 || len(r.api.CreatedSets()) != 0 || r.sessions() != 0 {
 		t.Errorf("fleet started %d, created %d, sessions %d: drift must stop before anything starts", started, len(r.api.CreatedSets()), r.sessions())
+	}
+}
+
+func TestSetThatAllowsUpdatesRefusesToStartNamingTheRename(t *testing.T) {
+	r := newRig(t, testConfig(5))
+	r.api.Sets["example"] = &scaleset.RunnerScaleSet{ID: 9, Name: "example", Labels: []scaleset.Label{{Name: "self-hosted"}, {Name: "example"}}}
+	r.start()
+	err, ok := r.result(3 * time.Second)
+	if !ok || !errors.Is(err, github.ErrUpdateEnabled) || !strings.Contains(err.Error(), "rename the scale set") {
+		t.Fatalf("run = %v (returned %v)", err, ok)
+	}
+	if started, _ := r.fleetOptions(); started != 0 || r.sessions() != 0 {
+		t.Errorf("fleet started %d, sessions %d: the refusal must stop before anything starts", started, r.sessions())
 	}
 }
 

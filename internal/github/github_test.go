@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/actions/scaleset"
@@ -39,7 +40,7 @@ func TestEnsureCreatesMissingSet(t *testing.T) {
 
 func TestEnsureReusesExistingSet(t *testing.T) {
 	f := NewFake()
-	f.Sets["example"] = &scaleset.RunnerScaleSet{ID: 7, Name: "example", Labels: labelled("example", "self-hosted")}
+	f.Sets["example"] = &scaleset.RunnerScaleSet{ID: 7, Name: "example", Labels: labelled("example", "self-hosted"), RunnerSetting: scaleset.RunnerSetting{DisableUpdate: true}}
 	set, err := EnsureScaleSet(context.Background(), f, "example", []string{"self-hosted", "example"})
 	if err != nil {
 		t.Fatal(err)
@@ -49,6 +50,18 @@ func TestEnsureReusesExistingSet(t *testing.T) {
 	}
 	if set.ID != 7 {
 		t.Errorf("set id = %d", set.ID)
+	}
+}
+
+func TestEnsureRefusesExistingSetThatAllowsUpdates(t *testing.T) {
+	f := NewFake()
+	f.Sets["example"] = &scaleset.RunnerScaleSet{ID: 7, Name: "example", Labels: labelled("example", "self-hosted")}
+	_, err := EnsureScaleSet(context.Background(), f, "example", []string{"self-hosted", "example"})
+	if !errors.Is(err, ErrUpdateEnabled) || !strings.Contains(err.Error(), "rename the scale set") {
+		t.Fatalf("err = %v, want ErrUpdateEnabled naming the rename", err)
+	}
+	if len(f.Created) != 0 {
+		t.Errorf("created %d sets over an existing one", len(f.Created))
 	}
 }
 
@@ -80,7 +93,7 @@ func TestEnsureLabelDrift(t *testing.T) {
 
 func TestEnsureLabelsMatchIgnoringOrderAndCase(t *testing.T) {
 	f := NewFake()
-	f.Sets["example"] = &scaleset.RunnerScaleSet{ID: 7, Name: "example", Labels: labelled("Self-Hosted", "example")}
+	f.Sets["example"] = &scaleset.RunnerScaleSet{ID: 7, Name: "example", Labels: labelled("Self-Hosted", "example"), RunnerSetting: scaleset.RunnerSetting{DisableUpdate: true}}
 	if _, err := EnsureScaleSet(context.Background(), f, "example", []string{"example", "self-hosted"}); err != nil {
 		t.Fatal(err)
 	}

@@ -16,6 +16,8 @@ const DefaultGroupID = 1
 
 var ErrLabelDrift = errors.New("labels are fixed at creation: rename the scale set in config")
 
+var ErrUpdateEnabled = errors.New("runner self-update is fixed at creation: rename the scale set in config")
+
 type Session interface {
 	listener.Client
 	Close(ctx context.Context) error
@@ -32,7 +34,8 @@ type API interface {
 
 // LookupScaleSet returns the named scale set, or nil when it does not exist.
 // An existing set whose labels differ from labels is an error: GitHub ignores
-// label updates, and deleting the set would orphan queued jobs.
+// label updates, and deleting the set would orphan queued jobs. One that allows
+// runner self-update is an error for the same reason.
 func LookupScaleSet(ctx context.Context, api API, name string, labels []string) (*scaleset.RunnerScaleSet, error) {
 	set, err := api.GetRunnerScaleSet(ctx, DefaultGroupID, name)
 	if err != nil {
@@ -44,6 +47,9 @@ func LookupScaleSet(ctx context.Context, api API, name string, labels []string) 
 	have := labelNames(set.Labels)
 	if !sameLabels(have, labels) {
 		return nil, fmt.Errorf("scale set %q has labels %v, config wants %v: %w", name, have, labels, ErrLabelDrift)
+	}
+	if !set.RunnerSetting.DisableUpdate {
+		return nil, fmt.Errorf("scale set %q allows runner self-update: %w", name, ErrUpdateEnabled)
 	}
 	return set, nil
 }
