@@ -253,7 +253,8 @@ func (d *daemon) run(ctx context.Context, sigs <-chan os.Signal) error {
 }
 
 // starting runs start while watching for a signal. A signal cancels the start
-// and waits up to shutdown_timeout for it to return.
+// and waits up to shutdown_timeout for it to return. A start that returns
+// later has its fleet shut down.
 func (d *daemon) starting(ctx context.Context, cfg config.ScaleSet, metrics prometheus.Registerer, sigs <-chan os.Signal, cancel context.CancelFunc) (*unit, os.Signal, error) {
 	type result struct {
 		u   *unit
@@ -273,6 +274,13 @@ func (d *daemon) starting(ctx context.Context, cfg config.ScaleSet, metrics prom
 		case r := <-res:
 			return r.u, sig, nil
 		case <-time.After(d.cfg.ShutdownDuration()):
+			go func() {
+				if late := <-res; late.u != nil {
+					ctx, stop := context.WithTimeout(context.Background(), d.cfg.ShutdownDuration())
+					defer stop()
+					late.u.fleet.Shutdown(ctx)
+				}
+			}()
 			return nil, sig, nil
 		}
 	}

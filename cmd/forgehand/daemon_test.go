@@ -337,6 +337,27 @@ func TestSIGTERMDuringStartupStopsInsideShutdownTimeout(t *testing.T) {
 	}
 }
 
+func TestFleetStartedAfterShutdownTimeoutIsShutDown(t *testing.T) {
+	r := newRig(t, testConfig(1))
+	gate := make(chan struct{})
+	r.d.deps.startFleet = func(config.Autoscaler, fleet.Options) (fleet.Fleet, error) {
+		<-gate
+		return r.fl, nil
+	}
+	r.start()
+	time.Sleep(50 * time.Millisecond)
+
+	r.sigs <- syscall.SIGTERM
+	if err, ok := r.result(5 * time.Second); !ok || err != nil {
+		t.Fatalf("run = %v (returned %v)\nlog:\n%s", err, ok, r.out.String())
+	}
+	if r.fl.IsShutdown() {
+		t.Fatal("fleet shut down before it started")
+	}
+	close(gate)
+	r.wait("the late fleet to be shut down", r.fl.IsShutdown)
+}
+
 func TestListenerReconnectsWithTheSameOwner(t *testing.T) {
 	r := newRig(t, testConfig(5))
 	r.api.Session.Errs = []error{errors.New("session evicted")}
