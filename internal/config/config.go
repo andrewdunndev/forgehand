@@ -18,9 +18,10 @@ const (
 	defaultInstanceAcquireTimeout = Duration(15 * time.Minute)
 )
 
-var rejectedKeys = map[string]bool{
-	"capacity_per_instance": true,
-	"max_use_count":         true,
+var rejectedKeys = map[string]string{
+	"capacity_per_instance":        "forgehand runs one JIT runner per VM; remove this key",
+	"max_use_count":                "forgehand runs one JIT runner per VM; remove this key",
+	"delete_instances_on_shutdown": "forgehand always deletes the VMs when it stops; remove this key",
 }
 
 type Config struct {
@@ -92,7 +93,6 @@ type Autoscaler struct {
 	ShutdownDeletionRetries     int             `toml:"shutdown_deletion_retries"`
 	FailureThreshold            int             `toml:"failure_threshold"`
 	ScaleThrottle               ScaleThrottle   `toml:"scale_throttle"`
-	DeleteInstancesOnShutdown   bool            `toml:"delete_instances_on_shutdown"`
 }
 
 type ConnectorConfig struct {
@@ -187,8 +187,8 @@ func undecodedError(keys []toml.Key) error {
 		if inPluginConfig(k) {
 			continue
 		}
-		if rejectedKeys[k[len(k)-1]] {
-			errs = append(errs, fmt.Errorf("%s: forgehand runs one JIT runner per VM; remove this key", k))
+		if msg, ok := rejectedKeys[k[len(k)-1]]; ok {
+			errs = append(errs, fmt.Errorf("%s: %s", k, msg))
 			continue
 		}
 		errs = append(errs, fmt.Errorf("%s: unknown key; remove it", k))

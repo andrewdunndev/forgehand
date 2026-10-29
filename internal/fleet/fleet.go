@@ -152,8 +152,8 @@ func (f *fleetImpl) Acquire(ctx context.Context, key string) (Instance, error) {
 
 func (f *fleetImpl) Release(key string) { f.ts.Release(key) }
 
-// Shutdown stops the autoscaler, which deletes the instances when
-// delete_instances_on_shutdown is set, then kills the plugin process.
+// Shutdown stops the autoscaler, which deletes the instances, then kills the
+// plugin process.
 func (f *fleetImpl) Shutdown(ctx context.Context) {
 	f.cancel()
 	f.ts.Shutdown(ctx)
@@ -162,7 +162,8 @@ func (f *fleetImpl) Shutdown(ctx context.Context) {
 
 // mapped returns the taskscaler options derived from cfg. Capacity per
 // instance and max use count are fixed at 1 so releasing an instance always
-// deletes it; zero values elsewhere pass through for taskscaler to default.
+// deletes it, and instances are always deleted at shutdown; zero values
+// elsewhere pass through for taskscaler to default.
 func mapped(cfg config.Autoscaler, s provider.Settings, up taskscaler.UpFunc) []taskscaler.Option {
 	opts := []taskscaler.Option{
 		taskscaler.WithCapacityPerInstance(1),
@@ -178,9 +179,7 @@ func mapped(cfg config.Autoscaler, s provider.Settings, up taskscaler.UpFunc) []
 		taskscaler.WithShutdownDeletionRetries(cfg.ShutdownDeletionRetries),
 		taskscaler.WithFailureThreshold(cfg.FailureThreshold),
 		taskscaler.WithScaleThrottle(cfg.ScaleThrottle.Limit, cfg.ScaleThrottle.Burst),
-	}
-	if cfg.DeleteInstancesOnShutdown {
-		opts = append(opts, taskscaler.WithDeleteInstancesOnShutdown())
+		taskscaler.WithDeleteInstancesOnShutdown(),
 	}
 	return opts
 }

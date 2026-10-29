@@ -39,8 +39,6 @@ max_instances = 4
 instance_ready_command = "true"
 # optional: how long a job waits for a VM before it is given up. Default "15m".
 instance_acquire_timeout = "15m"
-# optional: stop the VMs when forgehand stops.
-delete_instances_on_shutdown = true
 
 # The keys here belong to the plugin; forgehand passes them through untouched.
 # Each scale set or daemon needs its own name_prefix or owner in the plugin config;

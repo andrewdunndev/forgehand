@@ -28,7 +28,6 @@ func testConfig() config.Autoscaler {
 		UpdateIntervalWhenExpecting: config.Duration(10 * time.Millisecond),
 		DeletionRetryInterval:       config.Duration(30 * time.Millisecond),
 		ShutdownDeletionInterval:    config.Duration(10 * time.Millisecond),
-		DeleteInstancesOnShutdown:   true,
 	}
 }
 
@@ -93,6 +92,34 @@ func TestInstancesAreSingleUse(t *testing.T) {
 	})
 	if s := states(group)[b.InstanceID()]; s != provider.StateRunning {
 		t.Errorf("unreleased instance state = %v", s)
+	}
+}
+
+func TestShutdownDeletesIdleInstances(t *testing.T) {
+	group := &dummy.InstanceGroup{MaxSize: 4}
+	cfg := testConfig()
+	cfg.Policy = []config.Policy{{Periods: []string{"* * * * *"}, IdleCount: 2}}
+	f, err := New(group, cfg, Options{}, taskscaler.WithAcquireDelay(5*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "two idle instances", func() bool {
+		n := 0
+		for _, st := range states(group) {
+			if st == provider.StateRunning {
+				n++
+			}
+		}
+		return n == 2
+	})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	f.Shutdown(ctx)
+	for id, st := range states(group) {
+		if st != provider.StateDeleted {
+			t.Errorf("instance %s is %s after Shutdown", id, st)
+		}
 	}
 }
 

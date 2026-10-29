@@ -386,7 +386,6 @@ func TestPreexistingAndUnexpectedInstancesAreDeletedWithTheirRunners(t *testing.
 			UpdateIntervalWhenExpecting: config.Duration(10 * time.Millisecond),
 			DeletionRetryInterval:       config.Duration(30 * time.Millisecond),
 			ShutdownDeletionInterval:    config.Duration(10 * time.Millisecond),
-			DeleteInstancesOnShutdown:   true,
 		}, o, taskscaler.WithAcquireDelay(5*time.Millisecond))
 	}
 	r.start()
@@ -433,7 +432,6 @@ func TestMetricsEndpointServesTheFleetCollectors(t *testing.T) {
 		UpdateIntervalWhenExpecting: config.Duration(10 * time.Millisecond),
 		DeletionRetryInterval:       config.Duration(30 * time.Millisecond),
 		ShutdownDeletionInterval:    config.Duration(10 * time.Millisecond),
-		DeleteInstancesOnShutdown:   true,
 	}, fleet.Options{Name: "example", Metrics: reg}, taskscaler.WithAcquireDelay(5*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)

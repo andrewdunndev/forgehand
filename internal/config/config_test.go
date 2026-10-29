@@ -29,7 +29,6 @@ labels = ["self-hosted", "example"]
   instance_ready_command = "true"
   instance_acquire_timeout = "15m"
   failure_threshold = 3
-  delete_instances_on_shutdown = true
     [scalesets.autoscaler.plugin_config]
     address = "10.0.0.1"
     pool = ["a", "b"]
@@ -109,6 +108,9 @@ func TestParseRejects(t *testing.T) {
 		{"runner_group", func(s string) string {
 			return strings.Replace(s, "labels = ", "runner_group = \"Default\"\nlabels = ", 1)
 		}, "runner_group: unknown key"},
+		{"delete_instances_on_shutdown", func(s string) string {
+			return strings.Replace(s, "max_instances = 2", "max_instances = 2\n  delete_instances_on_shutdown = true", 1)
+		}, "scalesets.autoscaler.delete_instances_on_shutdown: forgehand always deletes the VMs when it stops; remove this key"},
 		{"unknown key", func(s string) string {
 			return strings.Replace(s, "max_instances = 2", "max_instances = 2\n  state_storage = true", 1)
 		}, "state_storage: unknown key"},

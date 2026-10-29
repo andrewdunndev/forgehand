@@ -31,7 +31,6 @@ func TestOneJobThroughTaskscalerAndTheDummyPlugin(t *testing.T) {
 		UpdateIntervalWhenExpecting: config.Duration(10 * time.Millisecond),
 		DeletionRetryInterval:       config.Duration(30 * time.Millisecond),
 		ShutdownDeletionInterval:    config.Duration(10 * time.Millisecond),
-		DeleteInstancesOnShutdown:   true,
 	}, fleet.Options{}, taskscaler.WithAcquireDelay(5*time.Millisecond))
 	if err != nil {
 		t.Fatal(err)
