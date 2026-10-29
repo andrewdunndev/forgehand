@@ -34,6 +34,7 @@ func (r reconciler) pass(ctx context.Context) {
 		return
 	}
 	held := r.held()
+	r.log.Debug("reconciling runners", "listed", len(names), "held", len(held))
 	for _, name := range names {
 		if held[name] || ctx.Err() != nil {
 			continue
@@ -48,7 +49,12 @@ func (r reconciler) remove(ctx context.Context, name string) {
 		r.logFailure(ctx, name, err)
 		return
 	}
-	if ref == nil || ref.RunnerScaleSetID == 0 || ref.RunnerScaleSetID != r.setID {
+	if ref == nil {
+		r.log.Debug("unheld runner not found by name", "runner", name)
+		return
+	}
+	r.log.Debug("unheld runner", "runner", name, "id", ref.ID, "scale_set_id", ref.RunnerScaleSetID)
+	if ref.RunnerScaleSetID == 0 || ref.RunnerScaleSetID != r.setID {
 		return
 	}
 	err = r.api.RemoveRunner(ctx, int64(ref.ID))
