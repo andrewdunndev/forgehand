@@ -34,6 +34,9 @@ configuration schema is still changing.
   - SSH reachable from the host as `connector_config.username`; the plugin
     generates the key pair itself. Set `key_path` and
     `use_static_credentials = true` only to use a key the image already trusts
+  - `autoscaler.instance_ready_command` gates readiness: a VM takes a job only
+    after it exits 0 over SSH, and the connection retries until `connector_config.timeout`.
+    Set it (`true` suffices) unless the image brings SSH up before the plugin reports an address
 
 ## Install
 

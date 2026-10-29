@@ -35,7 +35,9 @@ dir = "/opt/actions-runner"
 plugin = "fleeting-plugin-example"
 # required: the most VMs this scale set may hold at once.
 max_instances = 4
-# optional: a command run in the guest over SSH before a VM takes a job.
+# Readiness gate. Run in the guest over SSH once it connects (the connection
+# retries until connector_config.timeout); a VM takes a job only after it exits 0.
+# With it unset, a VM whose SSH is not yet up fails the pre-job check and is deleted.
 instance_ready_command = "true"
 # optional: how long a job waits for a VM before it is given up. Default "15m".
 instance_acquire_timeout = "15m"
