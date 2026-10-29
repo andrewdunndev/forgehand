@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"sync"
@@ -398,5 +399,120 @@ func TestHeartbeatCutShortByContextRemovesNothing(t *testing.T) {
 	defer inner.mu.Unlock()
 	if len(inner.decrease) != 0 {
 		t.Fatalf("Decrease called for %v after the caller's context ended", inner.decrease)
+	}
+}
+
+// applied runs opts against taskscaler's option struct and returns it, so a
+// test can read the fields the options set.
+func applied(t *testing.T, opts []taskscaler.Option) reflect.Value {
+	t.Helper()
+	st := reflect.ValueOf(opts[0]).Type().In(0)
+	p := reflect.New(st.Elem())
+	for _, o := range opts {
+		if err := reflect.ValueOf(o).Call([]reflect.Value{p})[0]; !err.IsNil() {
+			t.Fatalf("applying an option: %v", err)
+		}
+	}
+	return p.Elem()
+}
+
+func TestEveryAutoscalerKeyReachesTaskscaler(t *testing.T) {
+	keyPath := filepath.Join(t.TempDir(), "key")
+	if err := os.WriteFile(keyPath, []byte("guest-key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	preemptive := false
+	cfg := config.Autoscaler{
+		MaxInstances:                7,
+		UpdateInterval:              config.Duration(11 * time.Second),
+		UpdateIntervalWhenExpecting: config.Duration(3 * time.Second),
+		DeletionRetryInterval:       config.Duration(13 * time.Second),
+		ShutdownDeletionInterval:    config.Duration(17 * time.Second),
+		ShutdownDeletionRetries:     19,
+		FailureThreshold:            23,
+		ScaleThrottle:               config.ScaleThrottle{Limit: 29, Burst: 31},
+		ConnectorConfig: config.ConnectorConfig{
+			OS:                   "linux",
+			Arch:                 "arm64",
+			Protocol:             "ssh",
+			ProtocolPort:         2222,
+			Username:             "runner",
+			Password:             "pw",
+			KeyPath:              keyPath,
+			UseStaticCredentials: true,
+			Keepalive:            config.Duration(37 * time.Second),
+			Timeout:              config.Duration(41 * time.Second),
+		},
+		Policy: []config.Policy{
+			{
+				Periods:          []string{"* * * * *"},
+				Timezone:         "UTC",
+				IdleCount:        2,
+				IdleTime:         config.Duration(5 * time.Minute),
+				ScaleFactor:      1.5,
+				ScaleFactorLimit: 9,
+				PreemptiveMode:   &preemptive,
+			},
+			{IdleCount: 1},
+		},
+	}
+
+	s, err := settings(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantConn := provider.ConnectorConfig{
+		OS:                   "linux",
+		Arch:                 "arm64",
+		Protocol:             provider.Protocol("ssh"),
+		ProtocolPort:         2222,
+		Username:             "runner",
+		Password:             "pw",
+		Key:                  []byte("guest-key"),
+		UseStaticCredentials: true,
+		Keepalive:            37 * time.Second,
+		Timeout:              41 * time.Second,
+	}
+	if !reflect.DeepEqual(s.ConnectorConfig, wantConn) {
+		t.Errorf("settings = %+v, want %+v", s.ConnectorConfig, wantConn)
+	}
+
+	o := applied(t, mapped(cfg, s, nil))
+	ints := map[string]int64{
+		"maxInstances":                7,
+		"capacityPerInstance":         1,
+		"maxUseCount":                 1,
+		"updateInterval":              int64(11 * time.Second),
+		"updateIntervalWhenExpecting": int64(3 * time.Second),
+		"deletionRetryInterval":       int64(13 * time.Second),
+		"shutdownDeletionInterval":    int64(17 * time.Second),
+		"shutdownDeletionRetries":     19,
+		"failureThreshold":            23,
+		"scaleThrottleLimit":          29,
+		"scaleThrottleBurst":          31,
+	}
+	for name, want := range ints {
+		if got := o.FieldByName(name).Int(); got != want {
+			t.Errorf("%s = %d, want %d", name, got, want)
+		}
+	}
+	if !o.FieldByName("deleteInstancesOnShutdown").Bool() {
+		t.Error("deleteInstancesOnShutdown is off")
+	}
+
+	want := []taskscaler.Schedule{
+		{
+			Periods:          []string{"* * * * *"},
+			Timezone:         "UTC",
+			IdleCount:        2,
+			IdleTime:         5 * time.Minute,
+			ScaleFactor:      1.5,
+			ScaleFactorLimit: 9,
+			PreemptiveMode:   false,
+		},
+		{IdleCount: 1, PreemptiveMode: true},
+	}
+	if got := schedules(cfg.Policy); !reflect.DeepEqual(got, want) {
+		t.Errorf("schedules = %+v, want %+v", got, want)
 	}
 }

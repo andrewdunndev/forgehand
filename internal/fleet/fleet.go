@@ -122,19 +122,7 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 		return nil, fmt.Errorf("creating taskscaler: %w", err)
 	}
 
-	var schedules []taskscaler.Schedule
-	for _, p := range cfg.Policy {
-		schedules = append(schedules, taskscaler.Schedule{
-			Periods:          p.Periods,
-			Timezone:         p.Timezone,
-			IdleCount:        p.IdleCount,
-			IdleTime:         time.Duration(p.IdleTime),
-			ScaleFactor:      p.ScaleFactor,
-			ScaleFactorLimit: p.ScaleFactorLimit,
-			PreemptiveMode:   p.PreemptiveModeEnabled(),
-		})
-	}
-	if err := ts.ConfigureSchedule(schedules...); err != nil {
+	if err := ts.ConfigureSchedule(schedules(cfg.Policy)...); err != nil {
 		ts.Shutdown(ctx)
 		cancel()
 		return nil, fmt.Errorf("configuring taskscaler schedules: %w", err)
@@ -182,6 +170,22 @@ func mapped(cfg config.Autoscaler, s provider.Settings, up taskscaler.UpFunc) []
 		taskscaler.WithDeleteInstancesOnShutdown(),
 	}
 	return opts
+}
+
+func schedules(policy []config.Policy) []taskscaler.Schedule {
+	var out []taskscaler.Schedule
+	for _, p := range policy {
+		out = append(out, taskscaler.Schedule{
+			Periods:          p.Periods,
+			Timezone:         p.Timezone,
+			IdleCount:        p.IdleCount,
+			IdleTime:         time.Duration(p.IdleTime),
+			ScaleFactor:      p.ScaleFactor,
+			ScaleFactorLimit: p.ScaleFactorLimit,
+			PreemptiveMode:   p.PreemptiveModeEnabled(),
+		})
+	}
+	return out
 }
 
 // pluginConfig is exactly what the operator wrote under plugin_config.
