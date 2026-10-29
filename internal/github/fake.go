@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"fmt"
 	"sync"
 
 	"github.com/actions/scaleset"
@@ -20,6 +21,9 @@ type Fake struct {
 	GetScaleSetErr error
 	RemoveErr      error
 	JitErr         error
+	// RejectDuplicates makes a JIT mint fail with RunnerExistsError while
+	// the name is registered.
+	RejectDuplicates bool
 
 	Created  []*scaleset.RunnerScaleSet
 	Removed  []int64
@@ -71,6 +75,9 @@ func (f *Fake) GenerateJitRunnerConfig(_ context.Context, name string, _ int) (*
 	defer f.mu.Unlock()
 	if f.JitErr != nil {
 		return nil, f.JitErr
+	}
+	if _, taken := f.Runners[name]; taken && f.RejectDuplicates {
+		return nil, fmt.Errorf("minting %s: %w", name, scaleset.RunnerExistsError)
 	}
 	f.JitNames = append(f.JitNames, name)
 	f.nextID++

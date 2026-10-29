@@ -534,3 +534,44 @@ func TestFiveRunnersExitingBeforeTheMarkerEndRunNamingTheCause(t *testing.T) {
 		t.Fatalf("error does not name the cause: %v", err)
 	}
 }
+
+func TestOccupiedRunnerNameKeepsDaemonUpUntilItClears(t *testing.T) {
+	r := newRig(t, testConfig(1))
+	var mu sync.Mutex
+	var clock time.Time
+	r.d.now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		return clock
+	}
+	r.api.Runners["vm-1"] = &scaleset.RunnerReference{ID: 1, Name: "vm-1"}
+	r.api.RejectDuplicates = true
+	r.api.RemoveErr = scaleset.JobStillRunningError
+	r.api.Session.Info.Statistics = assigned(1)
+	r.start()
+
+	for i := 1; i <= 6; i++ {
+		r.wait("a blocked Acquire", func() bool { return len(r.fl.Waiting()) > 0 })
+		r.fl.Grant(r.fl.Waiting()[0], &fleet.FakeInstance{ID: "vm-1"})
+		r.wait("the instance to be released", func() bool { return len(r.fl.Released()) == i })
+		mu.Lock()
+		clock = clock.Add(31 * time.Second)
+		mu.Unlock()
+	}
+	if err, ok := r.result(50 * time.Millisecond); ok {
+		t.Fatalf("daemon exited with %v while the runner name was occupied", err)
+	}
+
+	r.api.RemoveErr = nil
+	for i := 0; r.guest.get("vm-1") == nil; i++ {
+		if i > 5 {
+			t.Fatalf("no runner started once the registration was removable\nlog:\n%s", r.out.String())
+		}
+		mu.Lock()
+		clock = clock.Add(31 * time.Second)
+		mu.Unlock()
+		r.wait("a blocked Acquire", func() bool { return len(r.fl.Waiting()) > 0 })
+		r.fl.Grant(r.fl.Waiting()[0], &fleet.FakeInstance{ID: "vm-1"})
+		time.Sleep(20 * time.Millisecond)
+	}
+}

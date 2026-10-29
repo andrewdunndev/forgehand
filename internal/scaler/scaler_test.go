@@ -926,3 +926,72 @@ func TestDrainStopsAcquiringJobs(t *testing.T) {
 		t.Fatalf("AcquireJobs called while draining: %v", r.session.Acquired)
 	}
 }
+
+func (r *rig) grantOccupied(name string) {
+	r.t.Helper()
+	r.waitFor("a blocked Acquire", func() bool { return len(r.fl.Waiting()) > 0 })
+	r.fl.Grant(r.fl.Waiting()[0], &fleet.FakeInstance{ID: name})
+}
+
+func TestRunnerExistsDoesNotCountTowardBreaker(t *testing.T) {
+	r := newRig(t)
+	r.s.tick = time.Millisecond
+	r.api.Runners["vm-1"] = &scaleset.RunnerReference{ID: 1, Name: "vm-1"}
+	r.api.RejectDuplicates = true
+	r.api.RemoveErr = scaleset.JobStillRunningError
+	ctx, cancel := context.WithCancel(context.Background())
+	exit := make(chan error, 1)
+	go func() { exit <- r.s.Run(ctx) }()
+
+	r.assigned(1)
+	for i := 1; i <= 2*breakerLimit; i++ {
+		r.grantOccupied("vm-1")
+		r.wantReleased(i)
+		r.advance(occupiedBackoff)
+	}
+	cancel()
+	if err := <-exit; err != nil {
+		t.Fatalf("Run = %v, want nil: an occupied name is not a slot failure", err)
+	}
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	if r.s.failures != 0 {
+		t.Fatalf("failures = %d, want 0", r.s.failures)
+	}
+}
+
+func TestRunnerExistsBackoffIsFlatAndRecovers(t *testing.T) {
+	r := newRig(t)
+	r.api.Runners["vm-1"] = &scaleset.RunnerReference{ID: 1, Name: "vm-1"}
+	r.api.RejectDuplicates = true
+	r.api.RemoveErr = scaleset.JobStillRunningError
+	r.assigned(1)
+	for i := 1; i <= 3; i++ {
+		r.grantOccupied("vm-1")
+		r.wantReleased(i)
+		r.advance(occupiedBackoff - time.Second)
+		if got := r.slotCount(); got != i {
+			t.Fatalf("respawned inside the flat backoff: slots = %d, want %d", got, i)
+		}
+		r.advance(time.Second)
+	}
+	r.api.RemoveErr = nil
+	r.grantOccupied("vm-1")
+	r.wantReleased(4)
+	r.waitFor("the idle survivor to be deregistered", func() bool { return len(r.api.RemovedRunners()) == 1 })
+	r.advance(occupiedBackoff)
+	r.listening("vm-1")
+}
+
+func TestNonConflictJitErrorStillCountsTowardBreaker(t *testing.T) {
+	r := newRig(t)
+	r.api.JitErr = errors.New("500 server error")
+	r.assigned(1)
+	r.grantOccupied("vm-1")
+	r.wantReleased(1)
+	r.s.mu.Lock()
+	defer r.s.mu.Unlock()
+	if r.s.failures != 1 {
+		t.Fatalf("failures = %d, want 1", r.s.failures)
+	}
+}

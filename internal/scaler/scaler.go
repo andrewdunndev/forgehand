@@ -20,6 +20,7 @@ const (
 	dropDebounce    = 10 * time.Second
 	completionGrace = 2 * time.Minute
 	backoffBase     = 5 * time.Second
+	occupiedBackoff = 30 * time.Second
 	breakerLimit    = 5
 	reapTimeout     = 30 * time.Second
 	diagTimeout     = 10 * time.Second
@@ -411,6 +412,10 @@ func (s *Scaler) exited(sl *slot, code int, err error) {
 	}
 	if err != nil {
 		if sl.state == Starting {
+			if errors.Is(err, scaleset.RunnerExistsError) {
+				s.occupied(sl)
+				return
+			}
 			s.fail(sl, fmt.Sprintf("starting the runner: %v", err))
 			return
 		}
@@ -604,20 +609,40 @@ func (s *Scaler) fail(sl *slot, cause string) {
 	}
 	s.failures++
 	s.log.Error("slot failed", "slot", sl.key, "runner", sl.name, "cause", cause)
-	if sl.name != "" {
-		s.wg.Add(1)
-		go func() {
-			defer s.wg.Done()
-			ctx, cancel := context.WithTimeout(context.Background(), reapTimeout)
-			defer cancel()
-			err := RemoveRunner(ctx, s.registry, sl.name)
-			if err != nil && !errors.Is(err, scaleset.RunnerNotFoundError) && !errors.Is(err, scaleset.JobStillRunningError) {
-				s.log.Warn("removing failed slot's runner failed", "runner", sl.name, "error", err)
-			}
-		}()
-	}
+	s.removeRegistration(sl)
 	s.nextSpawn = s.now().Add(backoffBase << (s.failures - 1))
 	if s.failures >= breakerLimit && s.fatal == nil {
 		s.fatal = fmt.Errorf("%d consecutive slots failed, last: %s", s.failures, cause)
 	}
+}
+
+// occupied ends a slot whose runner name is still registered, as after a
+// daemon crash while a job ran on the instance. It releases the instance
+// without counting toward the breaker and retries on a flat delay: the
+// registration clears when its job ends or the idle runner is removed here.
+func (s *Scaler) occupied(sl *slot) {
+	if !s.terminate(sl, Failed) {
+		return
+	}
+	s.log.Warn("runner name still registered, retrying", "slot", sl.key, "runner", sl.name, "retry_in", occupiedBackoff)
+	s.removeRegistration(sl)
+	s.nextSpawn = s.now().Add(occupiedBackoff)
+}
+
+// removeRegistration drops the slot's runner from GitHub in the background. A
+// busy runner refuses, and an ephemeral one leaves when its job ends.
+func (s *Scaler) removeRegistration(sl *slot) {
+	if sl.name == "" {
+		return
+	}
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		ctx, cancel := context.WithTimeout(context.Background(), reapTimeout)
+		defer cancel()
+		err := RemoveRunner(ctx, s.registry, sl.name)
+		if err != nil && !errors.Is(err, scaleset.RunnerNotFoundError) && !errors.Is(err, scaleset.JobStillRunningError) {
+			s.log.Warn("removing failed slot's runner failed", "runner", sl.name, "error", err)
+		}
+	}()
 }
