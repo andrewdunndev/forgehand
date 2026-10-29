@@ -115,6 +115,14 @@ func New(cfg Config, client Acquirer, registry Registry, fl fleet.Fleet, runner 
 	}
 }
 
+// isDraining reports whether Drain has begun. A draining daemon leaves jobs
+// unacquired so GitHub offers them elsewhere.
+func (s *Scaler) isDraining() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.draining
+}
+
 // Scale applies one poll. AcquireJobs failing is the only error it returns:
 // the listener then leaves the message unacked and redelivers it, and nothing
 // else has been touched.
@@ -124,7 +132,7 @@ func (s *Scaler) Scale(ctx context.Context, msg *scaleset.RunnerScaleSetMessage)
 		for _, j := range msg.JobAvailableMessages {
 			ids = append(ids, j.RunnerRequestID)
 		}
-		if len(ids) > 0 {
+		if len(ids) > 0 && !s.isDraining() {
 			if _, err := s.client.AcquireJobs(ctx, ids); err != nil {
 				return fmt.Errorf("acquiring jobs: %w", err)
 			}

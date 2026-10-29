@@ -881,3 +881,18 @@ func TestStopLogsRegistrationRemovalFailures(t *testing.T) {
 		t.Errorf("failure not logged:\n%s", got)
 	}
 }
+
+func TestDrainStopsAcquiringJobs(t *testing.T) {
+	r := newRig(t)
+	if err := r.s.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	r.scale(&scaleset.RunnerScaleSetMessage{
+		MessageID:            1,
+		Statistics:           stats(1),
+		JobAvailableMessages: []*scaleset.JobAvailable{{JobMessageBase: scaleset.JobMessageBase{RunnerRequestID: 7}}},
+	})
+	if len(r.session.Acquired) != 0 {
+		t.Fatalf("AcquireJobs called while draining: %v", r.session.Acquired)
+	}
+}
