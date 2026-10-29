@@ -270,6 +270,9 @@ func (s *Scaler) evaluate() {
 			}
 		case Busy:
 			s.settle(sl, now)
+			if sl.state == Busy && sl.lost {
+				s.toReaping(sl)
+			}
 		}
 	}
 
@@ -478,7 +481,7 @@ func (s *Scaler) find(name string) *slot {
 
 // settle ends a BUSY slot once the runner and GitHub both report the job over,
 // or the grace after the first report runs out. A lost runner never times out:
-// only GitHub can say its job is over.
+// only GitHub can say its job is over, so evaluate asks again on every poll.
 func (s *Scaler) settle(sl *slot, now time.Time) {
 	over := sl.completed && (sl.exited || sl.lost)
 	if !over && !sl.firstEnd.IsZero() && now.Sub(sl.firstEnd) >= completionGrace {

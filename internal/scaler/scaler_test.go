@@ -677,13 +677,34 @@ func TestLostRunnerKeepsVMUntilJobCompleted(t *testing.T) {
 		return sl.lost && !sl.reaping
 	})
 	r.advance(time.Hour)
-	if got := r.stateOfRunner("vm-1"); got != Busy {
-		t.Fatalf("slot is %s, want BUSY", got)
-	}
+	r.waitFor("the lost slot to settle back to BUSY", func() bool {
+		r.s.mu.Lock()
+		defer r.s.mu.Unlock()
+		sl := r.s.find("vm-1")
+		return sl.state == Busy && !sl.reaping
+	})
 	if n := len(r.fl.Released()); n != 0 {
 		t.Fatalf("released %d times while the job may still run", n)
 	}
 	r.scale(completed("vm-1"))
+	r.wantState("vm-1", Done)
+	r.wantReleased(1)
+}
+
+func TestLostBusyRunnerIsReapedOnceGitHubForgetsIt(t *testing.T) {
+	r := newRig(t)
+	r.assigned(1)
+	r.busy("vm-1")
+	r.api.RemoveErr = scaleset.JobStillRunningError
+	r.rn.get("vm-1").exit <- result{err: ErrLost}
+	r.waitFor("lost to be recorded", func() bool {
+		r.s.mu.Lock()
+		defer r.s.mu.Unlock()
+		sl := r.s.find("vm-1")
+		return sl.lost && !sl.reaping && sl.state == Busy
+	})
+	r.api.SetRemoveErr(scaleset.RunnerNotFoundError)
+	r.advance(time.Minute)
 	r.wantState("vm-1", Done)
 	r.wantReleased(1)
 }
