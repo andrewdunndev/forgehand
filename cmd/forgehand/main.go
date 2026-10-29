@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"runtime/debug"
 	"syscall"
 
 	"github.com/hashicorp/go-hclog"
@@ -18,6 +19,21 @@ import (
 
 // Version is stamped at build time with -ldflags "-X main.Version=...".
 var Version = "dev"
+
+// version is the stamped Version, or the main module version of a go install build.
+func version() string {
+	return resolveVersion(Version, debug.ReadBuildInfo)
+}
+
+func resolveVersion(stamped string, read func() (*debug.BuildInfo, bool)) string {
+	if stamped != "dev" {
+		return stamped
+	}
+	if bi, ok := read(); ok && bi.Main.Version != "" && bi.Main.Version != "(devel)" {
+		return bi.Main.Version
+	}
+	return stamped
+}
 
 const usage = `forgehand runs GitHub Actions jobs on single-use virtual machines.
 
@@ -42,7 +58,7 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stdout, usage)
 		return 0
 	case "version", "--version":
-		_, _ = fmt.Fprintln(stdout, "forgehand", Version)
+		_, _ = fmt.Fprintln(stdout, "forgehand", version())
 		return 0
 	case "run", "check":
 	default:

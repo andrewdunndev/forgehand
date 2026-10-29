@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -184,4 +185,24 @@ func TestCheck(t *testing.T) {
 			t.Errorf("err = %v, out = %q", err, out.String())
 		}
 	})
+}
+
+func TestResolveVersion(t *testing.T) {
+	read := func(v string) func() (*debug.BuildInfo, bool) {
+		return func() (*debug.BuildInfo, bool) { return &debug.BuildInfo{Main: debug.Module{Version: v}}, true }
+	}
+	for _, tt := range []struct {
+		name, stamped string
+		read          func() (*debug.BuildInfo, bool)
+		want          string
+	}{
+		{"stamped wins", "v9", read("v0.1.0"), "v9"},
+		{"module version", "dev", read("v0.1.0"), "v0.1.0"},
+		{"devel build", "dev", read("(devel)"), "dev"},
+		{"no build info", "dev", func() (*debug.BuildInfo, bool) { return nil, false }, "dev"},
+	} {
+		if got := resolveVersion(tt.stamped, tt.read); got != tt.want {
+			t.Errorf("%s: got %q, want %q", tt.name, got, tt.want)
+		}
+	}
 }
