@@ -13,7 +13,6 @@ import (
 
 const (
 	defaultShutdownTimeout        = 30
-	defaultRunnerGroup            = "Default"
 	defaultListenTimeout          = Duration(3 * time.Minute)
 	defaultIdleRunnerTimeout      = Duration(5 * time.Minute)
 	defaultInstanceAcquireTimeout = Duration(15 * time.Minute)
@@ -58,13 +57,12 @@ func (d *Duration) UnmarshalTOML(v any) error {
 }
 
 type ScaleSet struct {
-	Name        string     `toml:"name"`
-	URL         string     `toml:"url"`
-	Labels      []string   `toml:"labels"`
-	RunnerGroup string     `toml:"runner_group"`
-	GitHubApp   GitHubApp  `toml:"github_app"`
-	Runner      Runner     `toml:"runner"`
-	Autoscaler  Autoscaler `toml:"autoscaler"`
+	Name       string     `toml:"name"`
+	URL        string     `toml:"url"`
+	Labels     []string   `toml:"labels"`
+	GitHubApp  GitHubApp  `toml:"github_app"`
+	Runner     Runner     `toml:"runner"`
+	Autoscaler Autoscaler `toml:"autoscaler"`
 }
 
 type GitHubApp struct {
@@ -172,9 +170,6 @@ func Parse(data []byte) (*Config, error) {
 }
 
 func (s *ScaleSet) setDefaults() {
-	if s.RunnerGroup == "" {
-		s.RunnerGroup = defaultRunnerGroup
-	}
 	if s.Runner.ListenTimeout == 0 {
 		s.Runner.ListenTimeout = defaultListenTimeout
 	}
@@ -252,9 +247,6 @@ func (s *ScaleSet) validate(at string, fail func(string, ...any)) {
 		if strings.TrimSpace(l) == "" {
 			fail("%s: labels must not contain an empty label", at)
 		}
-	}
-	if !strings.EqualFold(s.RunnerGroup, defaultRunnerGroup) {
-		fail("%s: runner_group %q is not supported; use \"Default\"", at, s.RunnerGroup)
 	}
 	if s.GitHubApp.ClientID == "" {
 		fail("%s: github_app.client_id is required", at)

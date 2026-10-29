@@ -15,7 +15,6 @@ shutdown_timeout = 30
 name = "example"
 url = "https://github.com/owner/repo"
 labels = ["self-hosted", "example"]
-runner_group = "Default"
   [scalesets.github_app]
   client_id = "Iv1.example"
   installation_id = 12345678
@@ -63,7 +62,6 @@ func TestParseDefaults(t *testing.T) {
 	min := strings.NewReplacer(
 		"log_level = \"info\"\n", "",
 		"shutdown_timeout = 30\n", "",
-		"runner_group = \"Default\"\n", "",
 		"  listen_timeout = \"3m\"\n", "",
 		"  idle_runner_timeout = \"5m\"\n", "",
 		"  instance_acquire_timeout = \"15m\"\n", "",
@@ -73,7 +71,7 @@ func TestParseDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := cfg.ScaleSets[0]
-	if cfg.ShutdownTimeout != 30 || cfg.LogLevel != "info" || s.RunnerGroup != "Default" ||
+	if cfg.ShutdownTimeout != 30 || cfg.LogLevel != "info" ||
 		s.Runner.ListenTimeout != Duration(3*time.Minute) || s.Runner.IdleRunnerTimeout != Duration(5*time.Minute) ||
 		s.Autoscaler.InstanceAcquireTimeout != Duration(15*time.Minute) {
 		t.Errorf("defaults not applied: %+v", cfg)
@@ -108,6 +106,9 @@ func TestParseRejects(t *testing.T) {
 		{"max_use_count", func(s string) string {
 			return strings.Replace(s, "max_instances = 2", "max_instances = 2\n  max_use_count = 1", 1)
 		}, "scalesets.autoscaler.max_use_count: forgehand runs one JIT runner per VM; remove this key"},
+		{"runner_group", func(s string) string {
+			return strings.Replace(s, "labels = ", "runner_group = \"Default\"\nlabels = ", 1)
+		}, "runner_group: unknown key"},
 		{"unknown key", func(s string) string {
 			return strings.Replace(s, "max_instances = 2", "max_instances = 2\n  state_storage = true", 1)
 		}, "state_storage: unknown key"},
@@ -120,9 +121,6 @@ func TestParseRejects(t *testing.T) {
 		{"bad url", func(s string) string { return strings.Replace(s, "https://github.com/owner/repo", "owner/repo", 1) }, "url must be"},
 		{"no labels", func(s string) string { return strings.Replace(s, `labels = ["self-hosted", "example"]`, "", 1) }, "labels is required"},
 		{"empty label", func(s string) string { return strings.Replace(s, `"example"]`, `""]`, 1) }, "empty label"},
-		{"runner group", func(s string) string {
-			return strings.Replace(s, `runner_group = "Default"`, `runner_group = "Ops"`, 1)
-		}, "runner_group"},
 		{"no client_id", func(s string) string { return strings.Replace(s, `client_id = "Iv1.example"`, "", 1) }, "github_app.client_id"},
 		{"no installation_id", func(s string) string { return strings.Replace(s, "installation_id = 12345678", "", 1) }, "github_app.installation_id"},
 		{"no private_key_path", func(s string) string {
