@@ -131,6 +131,10 @@ func TestParseRejects(t *testing.T) {
 		{"no runner dir", func(s string) string { return strings.Replace(s, `dir = "/opt/actions-runner"`, "", 1) }, "runner.dir"},
 		{"no plugin", func(s string) string { return strings.Replace(s, `plugin = "fleeting-plugin-static"`, "", 1) }, "autoscaler.plugin is required"},
 		{"no max_instances", func(s string) string { return strings.Replace(s, "max_instances = 2", "", 1) }, "max_instances"},
+		{"static without key_path", func(s string) string {
+			return strings.Replace(s, `key_path = "/run/credentials/guest-ssh"`, "use_static_credentials = true", 1)
+		}, "use_static_credentials needs connector_config.key_path"},
+		{"duplicate name", func(s string) string { return s + valid[strings.Index(valid, "[[scalesets]]"):] }, "duplicate scale set name"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

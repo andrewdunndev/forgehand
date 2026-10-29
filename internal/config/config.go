@@ -220,6 +220,7 @@ func (c *Config) validate() error {
 		fail("scalesets: at least one [[scalesets]] entry is required")
 	}
 
+	seen := map[string]bool{}
 	for i := range c.ScaleSets {
 		s := &c.ScaleSets[i]
 		at := fmt.Sprintf("scalesets[%d]", i)
@@ -227,6 +228,12 @@ func (c *Config) validate() error {
 			at = fmt.Sprintf("scalesets[%d] %q", i, s.Name)
 		}
 		s.validate(at, fail)
+		if s.Name != "" {
+			if seen[s.Name] {
+				fail("%s: duplicate scale set name; each [[scalesets]] name must be unique", at)
+			}
+			seen[s.Name] = true
+		}
 	}
 	return errors.Join(errs...)
 }
@@ -271,5 +278,8 @@ func (s *ScaleSet) validate(at string, fail func(string, ...any)) {
 	}
 	if a.MaxInstances <= 0 {
 		fail("%s: autoscaler.max_instances is required and must be positive", at)
+	}
+	if a.ConnectorConfig.UseStaticCredentials && a.ConnectorConfig.KeyPath == "" {
+		fail("%s: connector_config.use_static_credentials needs connector_config.key_path, the guest private key; or remove use_static_credentials to let the plugin generate a key", at)
 	}
 }
