@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -153,5 +154,91 @@ func TestAdjustedOffsetsTheIdleCountAndStopsTrimming(t *testing.T) {
 	}
 	if base[0].IdleCount != 3 || base[0].IdleTime != time.Minute {
 		t.Errorf("adjusted changed its input: %+v", base[0])
+	}
+}
+
+// scheduleRecorder records the schedules written to it, holding the first
+// write after arm until let is closed.
+type scheduleRecorder struct {
+	taskscaler.Taskscaler
+	mu      sync.Mutex
+	idle    []int
+	armed   bool
+	entered chan struct{}
+	let     chan struct{}
+}
+
+func (r *scheduleRecorder) ConfigureSchedule(s ...taskscaler.Schedule) error {
+	r.mu.Lock()
+	hold := r.armed
+	r.armed = false
+	r.mu.Unlock()
+	if hold {
+		close(r.entered)
+		<-r.let
+	}
+	r.mu.Lock()
+	r.idle = append(r.idle, s[0].IdleCount)
+	r.mu.Unlock()
+	return nil
+}
+
+func (r *scheduleRecorder) last() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.idle[len(r.idle)-1]
+}
+
+func TestOverlappingNotesLeaveTheLatestScheduleWritten(t *testing.T) {
+	t.Parallel()
+	rec := &scheduleRecorder{entered: make(chan struct{}), let: make(chan struct{})}
+	g := newPoolGuard([]taskscaler.Schedule{{IdleCount: 2}})
+	if err := g.start(rec); err != nil {
+		t.Fatal(err)
+	}
+	rec.mu.Lock()
+	rec.armed = true
+	rec.mu.Unlock()
+
+	var wg sync.WaitGroup
+	wg.Go(func() { g.note("a") })
+	<-rec.entered
+	wg.Go(func() { g.note("b") })
+	eventually(t, "the second release to be recorded", func() bool {
+		g.mu.Lock()
+		defer g.mu.Unlock()
+		return len(g.pending) == 2
+	})
+	time.Sleep(50 * time.Millisecond)
+	close(rec.let)
+	wg.Wait()
+	if got := rec.last(); got != 0 {
+		t.Errorf("last idle count written = %d, want 0 with two releases in flight", got)
+	}
+}
+
+func TestFleetWithoutStorageKeepsTheConfiguredSchedule(t *testing.T) {
+	t.Parallel()
+	group := &dummy.InstanceGroup{MaxSize: 4}
+	cfg := testConfig()
+	cfg.Policy = []config.Policy{{IdleCount: 1}}
+	f, err := New(group, cfg, Options{}, taskscaler.WithAcquireDelay(5*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+		defer cancel()
+		f.Shutdown(ctx)
+	})
+	acquire(t, f, "a")
+	f.Release("a")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := f.WaitDeleted(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s := f.(*fleetImpl).ts.Schedule(); s.IdleCount != 1 || s.IdleTime != 0 {
+		t.Errorf("schedule = %+v, want the configured one", s)
 	}
 }
