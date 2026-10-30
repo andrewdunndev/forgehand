@@ -1436,3 +1436,27 @@ func TestAdoptedBusyRunnerThatEndedIsReapedOnceGitHubForgetsIt(t *testing.T) {
 		})
 	}
 }
+
+func TestDrainReturnsWhenTheRestoreEndsWithNothingToAdopt(t *testing.T) {
+	r := newRig(t)
+	r.fl.SetRestoring(true)
+
+	drained := make(chan error, 1)
+	go func() { drained <- r.s.Drain(context.Background()) }()
+	select {
+	case <-drained:
+		t.Fatal("Drain returned while the restore was under way")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	r.fl.SetRestoring(false)
+	r.advance(time.Second)
+	select {
+	case err := <-drained:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Drain did not return after the restore ended with nothing to adopt")
+	}
+}

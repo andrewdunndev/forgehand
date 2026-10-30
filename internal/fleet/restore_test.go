@@ -98,10 +98,14 @@ func TestStateDirKeepsInstanceFilesPrivate(t *testing.T) {
 }
 
 func TestNoStateDirWritesNothing(t *testing.T) {
+	t.Chdir(t.TempDir())
 	f := newFleet(t, &dummy.InstanceGroup{MaxSize: 4}, Options{})
 	acquire(t, f, "k")
 	if a, restoring := f.Restored(); len(a) != 0 || restoring {
 		t.Errorf("Restored = %v, %v on a fleet without storage", a, restoring)
+	}
+	if entries, err := os.ReadDir("."); err != nil || len(entries) != 0 {
+		t.Errorf("a fleet without a state directory wrote %v, %v", entries, err)
 	}
 }
 
