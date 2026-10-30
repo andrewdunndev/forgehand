@@ -1633,3 +1633,26 @@ func TestHandoffWaitsForStartingSlots(t *testing.T) {
 	waitHandoff(t, handoff, "Handoff did not return once the STARTING slot ended")
 	r.wantReleased(1)
 }
+
+func TestStartingSlotReachingListeningDuringDrainOrHandoffIsReapedAtOnce(t *testing.T) {
+	for _, handoff := range []bool{false, true} {
+		r := newRig(t)
+		r.assigned(1)
+		r.boot("vm-1")
+
+		done := make(chan error, 1)
+		go func() {
+			if handoff {
+				done <- r.s.Handoff(context.Background())
+			} else {
+				done <- r.s.Drain(context.Background())
+			}
+		}()
+		r.waitFor("the drain to begin", r.s.isDraining)
+		r.rn.get("vm-1").hooks.Listening()
+
+		r.wantState("vm-1", Done)
+		r.wantReleased(1)
+		waitHandoff(t, done, "the drain did not return once the slot was reaped")
+	}
+}

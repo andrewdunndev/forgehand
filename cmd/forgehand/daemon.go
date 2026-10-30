@@ -268,7 +268,9 @@ wait:
 					d.log.Error("ignoring SIGUSR1: handing off needs use_static_credentials on every scale set")
 					continue
 				}
-				handoff, err = d.drain(units, sigs, fatal, true)
+				var forced bool
+				forced, err = d.drain(units, sigs, fatal, true)
+				handoff = !forced
 				break wait
 			default:
 				break wait
@@ -276,7 +278,8 @@ wait:
 		}
 	}
 	if handoff {
-		return d.release(units, cancel)
+		d.release(units, cancel)
+		return err
 	}
 	if stopErr := d.stop(units, cancel); err == nil {
 		err = stopErr
@@ -303,7 +306,7 @@ func (d *daemon) starting(ctx context.Context, cfg config.ScaleSet, metrics prom
 			return r.u, nil, r.err
 		case sig := <-sigs:
 			if sig == syscall.SIGUSR1 {
-				d.log.Error("ignoring SIGUSR1: a handoff waits until every scale set has started")
+				d.log.Error("ignoring SIGUSR1 during startup; send it again once every scale set has started")
 				continue
 			}
 			cancel()
@@ -356,14 +359,14 @@ func (d *daemon) canHandOff() bool {
 }
 
 // drain returns once every scale set has no runner left, or with a handoff
-// none but busy ones, and reports whether it got there. A forceful signal or a
-// tripped breaker ends it sooner.
-func (d *daemon) drain(units []*unit, sigs <-chan os.Signal, fatal <-chan error, handoff bool) (bool, error) {
+// none but busy ones. A tripped breaker ends it with its error, and SIGTERM or
+// SIGINT with forced set. SIGQUIT and SIGUSR1 are logged and ignored.
+func (d *daemon) drain(units []*unit, sigs <-chan os.Signal, fatal <-chan error, handoff bool) (forced bool, err error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	wait := (*scaler.Scaler).Drain
+	wait, mode := (*scaler.Scaler).Drain, "drain"
 	if handoff {
-		wait = (*scaler.Scaler).Handoff
+		wait, mode = (*scaler.Scaler).Handoff, "handoff"
 	}
 	done := make(chan struct{})
 	go func() {
@@ -383,14 +386,16 @@ func (d *daemon) drain(units []*unit, sigs <-chan os.Signal, fatal <-chan error,
 	for {
 		select {
 		case <-done:
-			return true, nil
+			return false, nil
 		case err := <-fatal:
+			d.log.Error("stopping", "error", err)
 			return false, err
 		case sig := <-sigs:
 			if sig == syscall.SIGTERM || sig == syscall.SIGINT {
 				d.log.Warn("forceful signal during drain", "signal", sig)
-				return false, nil
+				return true, nil
 			}
+			d.log.Info(mode + " in progress; ignoring " + sigName(sig))
 		}
 	}
 }
@@ -494,10 +499,21 @@ func (d *daemon) checkOne(ctx context.Context, cfg config.ScaleSet, out io.Write
 	return nil
 }
 
+// sigName names a signal as the README and the unit do.
+func sigName(sig os.Signal) string {
+	switch sig {
+	case syscall.SIGQUIT:
+		return "SIGQUIT"
+	case syscall.SIGUSR1:
+		return "SIGUSR1"
+	}
+	return sig.String()
+}
+
 // release ends a handoff: the listeners stop and the process may exit with
 // the fleets untouched, so busy VMs and their runners keep running for the
 // next process to adopt.
-func (d *daemon) release(units []*unit, stopListening context.CancelFunc) error {
+func (d *daemon) release(units []*unit, stopListening context.CancelFunc) {
 	stopListening()
 	timer := time.NewTimer(d.cfg.ShutdownDuration())
 	defer timer.Stop()
@@ -505,8 +521,7 @@ func (d *daemon) release(units []*unit, stopListening context.CancelFunc) error 
 		select {
 		case <-u.listened:
 		case <-timer.C:
-			return nil
+			return
 		}
 	}
-	return nil
 }

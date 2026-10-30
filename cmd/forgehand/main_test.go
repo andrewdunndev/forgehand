@@ -7,7 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strings"
+	"syscall"
 	"testing"
 
 	"github.com/actions/scaleset"
@@ -216,5 +218,13 @@ func TestVersionCommandUsesModuleVersion(t *testing.T) {
 	var out, errb bytes.Buffer
 	if code := execute([]string{"version"}, &out, &errb); code != 0 || strings.TrimSpace(out.String()) != "forgehand v0.1.0" {
 		t.Errorf("code %d, out %q", code, out.String())
+	}
+}
+
+func TestRunHandlesQuitHandoffAndStopSignals(t *testing.T) {
+	for _, want := range []os.Signal{syscall.SIGQUIT, syscall.SIGUSR1, syscall.SIGTERM, syscall.SIGINT} {
+		if !slices.Contains(runSignals, want) {
+			t.Errorf("runSignals lacks %v", want)
+		}
 	}
 }

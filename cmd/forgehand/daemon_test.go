@@ -775,3 +775,95 @@ func TestForcefulSignalsEndAHandoffWaitAndReleaseEverything(t *testing.T) {
 		})
 	}
 }
+
+func TestOnlyTERMAndINTAreForcefulDuringADrainOrHandoff(t *testing.T) {
+	for _, c := range []struct {
+		first  syscall.Signal
+		others []syscall.Signal
+	}{
+		{syscall.SIGQUIT, []syscall.Signal{syscall.SIGUSR1, syscall.SIGQUIT}},
+		{syscall.SIGUSR1, []syscall.Signal{syscall.SIGQUIT, syscall.SIGUSR1}},
+	} {
+		t.Run(c.first.String(), func(t *testing.T) {
+			t.Setenv("STATE_DIRECTORY", t.TempDir())
+			cfg := testConfig(5)
+			cfg.ScaleSets[0].Autoscaler.ConnectorConfig.UseStaticCredentials = true
+			r := newRig(t, cfg)
+			r.api.Session.Info.Statistics = assigned(1)
+			r.start()
+			r.boot("vm-a")
+
+			r.sigs <- c.first
+			for i, sig := range c.others {
+				r.sigs <- sig
+				want := "in progress; ignoring " + sigName(sig)
+				r.wait("the ignored signal logged", func() bool {
+					return strings.Count(r.out.String(), want) > 0
+				})
+				if err, ok := r.result(200 * time.Millisecond); ok {
+					t.Fatalf("signal %d: run returned (%v) after an ignored %v", i, err, sig)
+				}
+				if r.fl.IsShutdown() {
+					t.Fatalf("fleet shut down by %v", sig)
+				}
+			}
+			r.sigs <- syscall.SIGTERM
+			if _, ok := r.result(5 * time.Second); !ok {
+				t.Fatal("run did not stop on SIGTERM")
+			}
+			if !r.fl.IsShutdown() {
+				t.Error("fleet not shut down by SIGTERM")
+			}
+		})
+	}
+}
+
+func TestBreakerTripDuringHandoffKeepsTheFleetAndDuringDrainStopsIt(t *testing.T) {
+	for _, handoff := range []bool{true, false} {
+		t.Setenv("STATE_DIRECTORY", t.TempDir())
+		cfg := testConfig(1)
+		cfg.ScaleSets[0].Autoscaler.ConnectorConfig.UseStaticCredentials = true
+		r := newRig(t, cfg)
+		var mu sync.Mutex
+		var clock time.Time
+		r.d.now = func() time.Time {
+			mu.Lock()
+			defer mu.Unlock()
+			return clock
+		}
+		later := func() {
+			mu.Lock()
+			defer mu.Unlock()
+			clock = clock.Add(time.Hour)
+		}
+		r.api.Session.Info.Statistics = assigned(2)
+		r.start()
+
+		for i := 0; i < 2; i++ {
+			_, a := r.boot(fmt.Sprintf("vm-%d-a", i))
+			_, b := r.boot(fmt.Sprintf("vm-%d-b", i))
+			a.exit <- 1
+			b.exit <- 1
+			r.wait("the failures", func() bool { return strings.Count(r.out.String(), "slot failed") >= 2*(i+1) })
+			later()
+		}
+		_, last := r.boot("vm-last-a")
+		r.boot("vm-last-b")
+		if handoff {
+			r.sigs <- syscall.SIGUSR1
+		} else {
+			r.sigs <- syscall.SIGQUIT
+		}
+		r.wait("the drain to begin", func() bool {
+			return strings.Contains(r.out.String(), "signal received")
+		})
+		last.exit <- 1
+		err, ok := r.result(5 * time.Second)
+		if !ok || err == nil || !strings.Contains(err.Error(), "5 consecutive slots failed") {
+			t.Fatalf("handoff=%v: run = %v (returned %v), want the breaker error", handoff, err, ok)
+		}
+		if got := r.fl.IsShutdown(); got == handoff {
+			t.Errorf("handoff=%v: fleet shut down = %v", handoff, got)
+		}
+	}
+}

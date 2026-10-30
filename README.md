@@ -97,9 +97,13 @@ cosign verify-blob forgehand-linux-amd64 --bundle forgehand-linux-amd64.bundle \
   daemon exits. `SIGTERM` or `SIGINT` during a drain ends it and stops within `shutdown_timeout`.
 - `SIGUSR1` hands off, only when every scale set sets `use_static_credentials`
   (otherwise it is ignored and logged as an error): idle runners are removed,
-  nothing new starts, and once no runner is starting, listening or being
-  removed the daemon exits 0 without deleting the VMs of running jobs. See
-  Upgrade.
+  nothing new starts, and once no runner is waiting for a VM, starting,
+  listening, being removed or being adopted the daemon exits 0 without
+  deleting the VMs of running jobs. During a drain or a handoff only
+  `SIGTERM` and `SIGINT` act; `SIGQUIT` and `SIGUSR1` are logged and ignored.
+  A tripped failure breaker during a handoff exits 1 and still leaves the VMs
+  of running jobs. `SIGUSR1` during startup is dropped: send it again once
+  every scale set has started. See Upgrade.
 - `SIGTERM` and `SIGINT` stop within `shutdown_timeout` seconds, running jobs
   included.
 - A crash (`SIGKILL`) leaves the VMs and their runners running; see Restart.
@@ -108,7 +112,8 @@ cosign verify-blob forgehand-linux-amd64 --bundle forgehand-linux-amd64.bundle \
 
 With `use_static_credentials = true`, forgehand keeps its autoscaler state in
 `$STATE_DIRECTORY/<scale set name>` (the example unit sets
-`StateDirectory=forgehand`), and a restart adopts what an earlier run left:
+`StateDirectory=forgehand`). `run` refuses to start without `STATE_DIRECTORY`
+when a scale set uses them. A restart adopts what an earlier run left:
 
 - A VM whose runner is running a job keeps running; the new process follows
   the runner and holds the VM until GitHub reports the job complete.
@@ -119,6 +124,8 @@ With `use_static_credentials = true`, forgehand keeps its autoscaler state in
 - A VM held warm by `idle_count` stays.
 - Nothing starts a new VM for a job until the restored VMs have been counted.
   That wait ends at once when none are restorable, and after 3 minutes at most.
+- `SIGTERM` during that wait deletes every VM but removes only the runners of
+  slots already adopted; the others stay registered.
 
 The state files hold no JIT config, but they hold each VM's connection
 details, including the guest SSH private key. They are mode 0600 in a 0700

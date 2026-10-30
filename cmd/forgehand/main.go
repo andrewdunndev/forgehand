@@ -22,6 +22,9 @@ var Version = "dev"
 
 var readBuildInfo = debug.ReadBuildInfo
 
+// runSignals are the signals run handles.
+var runSignals = []os.Signal{syscall.SIGQUIT, syscall.SIGUSR1, syscall.SIGTERM, syscall.SIGINT}
+
 // version is the stamped Version, or the main module version of a go install build.
 func version() string {
 	return resolveVersion(Version, readBuildInfo)
@@ -103,7 +106,7 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		err = d.check(ctx, stdout)
 	default:
 		sigs := make(chan os.Signal, 4)
-		signal.Notify(sigs, syscall.SIGQUIT, syscall.SIGUSR1, syscall.SIGTERM, syscall.SIGINT)
+		signal.Notify(sigs, runSignals...)
 		err = d.run(context.Background(), sigs)
 	}
 	if err != nil {
