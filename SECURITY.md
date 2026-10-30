@@ -36,5 +36,6 @@ disclosure date within thirty days. Please do not open a public issue first.
 ## Guest network
 
 Guest SSH host keys are not verified, because fleeting's connector ignores
-them. The guest network must stop guests spoofing each other's IP or MAC: use
-VF spoofchk plus port isolation.
+them. The guest network must stop guests spoofing each other's IP or MAC: put
+guests on an isolated libvirt network or isolated bridge ports and apply the
+`clean-traffic` nwfilter (with SR-IOV hostdev, VF spoofchk instead).
