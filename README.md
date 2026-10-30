@@ -24,8 +24,15 @@ configuration schema is still changing.
 
 ## Prerequisites
 
-- A GitHub App installed on the repository, with Administration
-  read and write. You need its client ID, its installation ID and a private key.
+- A GitHub App installed on the repository. Each scale set serves one
+  repository, so N repositories need N scale sets. [Create the
+  App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app)
+  with the repository permission Administration read and write and the webhook
+  off, then install it and generate a private key. `client_id` is the App's
+  client ID, not its App ID; `installation_id` is the number at the end of the
+  installation's settings URL. Do not point a scale set at a public repository
+  whose fork pull requests can run without approval; see GitHub's
+  [self-hosted runner security guidance](https://docs.github.com/en/actions/reference/security/secure-use#hardening-for-self-hosted-runners).
 - A fleeting plugin for your hypervisor or cloud, installed on the host.
   [fleeting-plugin-libvirt](https://gitlab.com/dunn.dev/fleeting-plugin-libvirt) is the reference plugin.
 - A guest image with:
@@ -48,7 +55,9 @@ Release binaries for linux amd64 and arm64 are on the
 [releases page](https://gitlab.com/dunn.dev/forgehand/-/releases).
 
 Or build from source with `mise install && just build`, which writes
-`bin/forgehand`. Install plugins with `FLEETING_PLUGIN_PATH` set to the directory the unit sets, or set `plugin` to a binary path.
+`bin/forgehand`. Install a plugin with `fleeting-artifact install <ref>` and `FLEETING_PLUGIN_PATH`
+set to the directory the unit sets (the plugin's README has its install line),
+or set `plugin` to a binary path.
 
 ## Quickstart
 
@@ -62,6 +71,16 @@ forgehand run -c forgehand.toml
 `check` resolves the plugin, finds the key files that are set and authenticates the App, then prints `ok`. It does not start the plugin; `plugin_config` is validated when `run` starts it. It creates nothing and starts no VM.
 [`examples/forgehand.toml`](examples/forgehand.toml) comments each required key;
 [`examples/forgehand.service`](examples/forgehand.service) is a hardened systemd unit.
+
+## Verify a release
+
+Download a binary and its `.bundle` from the releases page, then:
+
+```
+cosign verify-blob forgehand-linux-amd64 --bundle forgehand-linux-amd64.bundle \
+  --certificate-identity-regexp '^https://gitlab\.com/dunn\.dev/forgehand//\.gitlab-ci\.yml@refs/tags/.+$' \
+  --certificate-oidc-issuer https://gitlab.com
+```
 
 ## Signals
 
