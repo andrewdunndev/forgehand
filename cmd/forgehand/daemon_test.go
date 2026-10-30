@@ -648,6 +648,7 @@ func TestSIGUSR1HandsOffLeavingBusyVMsAndNeverShutsTheFleetDown(t *testing.T) {
 	cfg.ScaleSets[0].Autoscaler.ConnectorConfig.UseStaticCredentials = true
 	r := newRig(t, cfg)
 	r.api.Session.Info.Statistics = assigned(2)
+	r.api.Session.CloseDelay = 100 * time.Millisecond
 	r.start()
 
 	idle, a := r.boot("vm-a")
@@ -665,6 +666,9 @@ func TestSIGUSR1HandsOffLeavingBusyVMsAndNeverShutsTheFleetDown(t *testing.T) {
 	}
 	if r.fl.IsShutdown() {
 		t.Error("fleet shut down by a handoff")
+	}
+	if !r.api.Session.IsClosed() {
+		t.Error("handoff exited before the message session was closed")
 	}
 }
 
@@ -865,5 +869,54 @@ func TestBreakerTripDuringHandoffKeepsTheFleetAndDuringDrainStopsIt(t *testing.T
 		if got := r.fl.IsShutdown(); got == handoff {
 			t.Errorf("handoff=%v: fleet shut down = %v", handoff, got)
 		}
+	}
+}
+
+func TestHandoffWaitsForTheListenersAndTheDeletionOfRemovedIdleVMs(t *testing.T) {
+	t.Setenv("STATE_DIRECTORY", t.TempDir())
+	cfg := testConfig(5)
+	cfg.ScaleSets[0].Autoscaler.ConnectorConfig.UseStaticCredentials = true
+	r := newRig(t, cfg)
+	r.api.Session.Info.Statistics = assigned(2)
+	r.fl.HoldDeletions()
+	r.start()
+
+	_, a := r.boot("vm-a")
+	_, b := r.boot("vm-b")
+	a.hooks.Listening()
+	b.hooks.Listening()
+	b.hooks.RunningJob()
+
+	r.sigs <- syscall.SIGUSR1
+	if _, ok := r.result(300 * time.Millisecond); ok {
+		t.Fatal("handoff exited before the removed idle VM was deleted")
+	}
+	r.fl.FinishDeletions()
+	if err, ok := r.result(3 * time.Second); !ok || err != nil {
+		t.Fatalf("run = %v (returned %v), want a clean exit once the deletions finished", err, ok)
+	}
+}
+
+func TestHandoffGivesUpOnSlowDeletionsAtShutdownTimeout(t *testing.T) {
+	t.Setenv("STATE_DIRECTORY", t.TempDir())
+	cfg := testConfig(1)
+	cfg.ScaleSets[0].Autoscaler.ConnectorConfig.UseStaticCredentials = true
+	r := newRig(t, cfg)
+	r.api.Session.Info.Statistics = assigned(1)
+	r.fl.HoldDeletions()
+	r.start()
+
+	_, a := r.boot("vm-a")
+	a.hooks.Listening()
+
+	r.sigs <- syscall.SIGUSR1
+	if err, ok := r.result(4 * time.Second); !ok || err != nil {
+		t.Fatalf("run = %v (returned %v), want a clean exit at shutdown_timeout", err, ok)
+	}
+	if !strings.Contains(r.out.String(), "VMs still being deleted") {
+		t.Errorf("log does not say the deletions were left:\n%s", r.out.String())
+	}
+	if r.fl.IsShutdown() {
+		t.Error("fleet shut down by a handoff")
 	}
 }

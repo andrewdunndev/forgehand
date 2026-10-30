@@ -516,3 +516,40 @@ func TestEveryAutoscalerKeyReachesTaskscaler(t *testing.T) {
 		t.Errorf("schedules = %+v, want %+v", got, want)
 	}
 }
+
+func TestWaitDeletedReturnsOnceTheReleasedInstanceIsGone(t *testing.T) {
+	group := &dummy.InstanceGroup{MaxSize: 4}
+	f := newFleet(t, group, Options{})
+	a := acquire(t, f, "a")
+	b := acquire(t, f, "b")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := f.WaitDeleted(ctx); err != nil {
+		t.Fatalf("WaitDeleted with nothing released = %v", err)
+	}
+	f.Release("a")
+	if err := f.WaitDeleted(ctx); err != nil {
+		t.Fatalf("WaitDeleted = %v", err)
+	}
+	if s := states(group)[a.InstanceID()]; s != provider.StateDeleting && s != provider.StateDeleted {
+		t.Errorf("released instance is %s after WaitDeleted", s)
+	}
+	if s := states(group)[b.InstanceID()]; s != provider.StateRunning {
+		t.Errorf("held instance is %s", s)
+	}
+}
+
+func TestWaitDeletedEndsWithTheContextWhileADeletionIsPending(t *testing.T) {
+	d := newDeletions()
+	d.expect("x")
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	if err := d.wait(ctx); err == nil {
+		t.Fatal("wait returned nil with a deletion pending")
+	}
+	d.done([]string{"x"})
+	if err := d.wait(context.Background()); err != nil {
+		t.Fatalf("wait after the deletion = %v", err)
+	}
+}

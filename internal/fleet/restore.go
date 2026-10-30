@@ -29,6 +29,8 @@ type restore struct {
 
 	mu      sync.Mutex
 	waiting map[string]struct{}
+	// keys holds every acquisition the state files hold, adopted or not.
+	keys    []string
 	adopted []Adopted
 }
 
@@ -36,29 +38,32 @@ type restore struct {
 // removal: only those reach the up function.
 func newRestore(store storage.Storage, log hclog.Logger, ceiling time.Duration) (*restore, error) {
 	r := &restore{store: store, log: log, now: time.Now, waiting: map[string]struct{}{}}
-	ids, err := r.restorable()
+	instances, err := r.restorable()
 	if err != nil {
 		return nil, err
 	}
-	for _, id := range ids {
-		r.waiting[id] = struct{}{}
+	for _, in := range instances {
+		r.waiting[in.ID] = struct{}{}
+		for _, a := range in.Slots {
+			r.keys = append(r.keys, a.Key)
+		}
 	}
 	r.deadline = r.now().Add(ceiling)
 	return r, nil
 }
 
-func (r *restore) restorable() ([]string, error) {
+func (r *restore) restorable() ([]storage.InstanceState, error) {
 	state, err := r.store.Load()
 	if err != nil {
 		return nil, err
 	}
-	var ids []string
+	var out []storage.InstanceState
 	for _, in := range state.Instances {
 		if !in.Removing {
-			ids = append(ids, in.ID)
+			out = append(out, in)
 		}
 	}
-	return ids, nil
+	return out, nil
 }
 
 // up records an instance's up function as returned, with the acquisitions it
@@ -82,10 +87,10 @@ func (r *restore) take() ([]Adopted, bool) {
 	if len(r.waiting) == 0 {
 		return out, false
 	}
-	if ids, err := r.restorable(); err == nil {
+	if instances, err := r.restorable(); err == nil {
 		live := map[string]struct{}{}
-		for _, id := range ids {
-			live[id] = struct{}{}
+		for _, in := range instances {
+			live[in.ID] = struct{}{}
 		}
 		for id := range r.waiting {
 			if _, ok := live[id]; !ok {

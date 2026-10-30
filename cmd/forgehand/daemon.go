@@ -510,17 +510,25 @@ func sigName(sig os.Signal) string {
 	return sig.String()
 }
 
-// release ends a handoff: the listeners stop and the process may exit with
-// the fleets untouched, so busy VMs and their runners keep running for the
-// next process to adopt.
+// release ends a handoff: the listeners stop and the plugins finish deleting
+// the VMs of the removed idle runners, then the process may exit with the
+// fleets untouched, so busy VMs and their runners keep running for the next
+// process to adopt. A fleet that is slow to delete is given up on at
+// shutdown_timeout.
 func (d *daemon) release(units []*unit, stopListening context.CancelFunc) {
 	stopListening()
-	timer := time.NewTimer(d.cfg.ShutdownDuration())
-	defer timer.Stop()
+	ctx, cancel := context.WithTimeout(context.Background(), d.cfg.ShutdownDuration())
+	defer cancel()
 	for _, u := range units {
 		select {
 		case <-u.listened:
-		case <-timer.C:
+		case <-ctx.Done():
+			return
+		}
+	}
+	for _, u := range units {
+		if err := u.fleet.WaitDeleted(ctx); err != nil {
+			u.log.Warn("leaving with VMs still being deleted", "error", err)
 			return
 		}
 	}

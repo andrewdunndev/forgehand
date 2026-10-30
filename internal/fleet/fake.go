@@ -34,6 +34,7 @@ type Fake struct {
 	held     map[string]Instance
 	released []string
 	down     bool
+	deleting chan struct{}
 
 	restoring bool
 	adopted   []Adopted
@@ -163,4 +164,36 @@ func (f *Fake) Restored() ([]Adopted, bool) {
 	out := f.adopted
 	f.adopted = nil
 	return out, f.restoring
+}
+
+// HoldDeletions makes WaitDeleted block until FinishDeletions.
+func (f *Fake) HoldDeletions() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deleting = make(chan struct{})
+}
+
+// FinishDeletions lets WaitDeleted return.
+func (f *Fake) FinishDeletions() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.deleting != nil {
+		close(f.deleting)
+		f.deleting = nil
+	}
+}
+
+func (f *Fake) WaitDeleted(ctx context.Context) error {
+	f.mu.Lock()
+	gate := f.deleting
+	f.mu.Unlock()
+	if gate == nil {
+		return nil
+	}
+	select {
+	case <-gate:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

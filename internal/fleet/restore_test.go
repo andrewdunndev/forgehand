@@ -388,3 +388,27 @@ func TestUpFuncSkipsAcquisitionsTaskscalerNoLongerHolds(t *testing.T) {
 		t.Errorf("adopted = %+v, want only kept", adopted)
 	}
 }
+
+func TestShutdownReleasesRestoredAcquisitionsNothingAdopted(t *testing.T) {
+	dir := t.TempDir()
+	group := &dummy.InstanceGroup{MaxSize: 4}
+	id := group.AddInstance(provider.StateRunning)
+	saveInstance(t, dir, id, "old-1", false)
+
+	f, err := New(group, testConfig(), Options{StateDir: dir}, taskscaler.WithAcquireDelay(5*time.Millisecond))
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored(t, f)
+
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	f.Shutdown(ctx)
+	if took := time.Since(start); took > time.Second {
+		t.Errorf("Shutdown took %s waiting for a release nothing would make", took)
+	}
+	if st := states(group)[id]; st != provider.StateDeleted {
+		t.Errorf("restored instance is %s after Shutdown", st)
+	}
+}

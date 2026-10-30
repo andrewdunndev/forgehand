@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/actions/scaleset"
 	"github.com/google/uuid"
@@ -131,6 +132,8 @@ type FakeSession struct {
 	Deleted   []int
 	AcquireFn func(ids []int64) ([]int64, error)
 	Closed    bool
+	// CloseDelay makes Close take that long before it marks the session closed.
+	CloseDelay time.Duration
 }
 
 var _ Session = (*FakeSession)(nil)
@@ -181,6 +184,7 @@ func (s *FakeSession) AcquireJobs(_ context.Context, ids []int64) ([]int64, erro
 func (s *FakeSession) Session() scaleset.RunnerScaleSetSession { return s.Info }
 
 func (s *FakeSession) Close(context.Context) error {
+	time.Sleep(s.CloseDelay)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.Closed = true

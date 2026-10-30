@@ -38,6 +38,9 @@ type Fleet interface {
 	Acquire(ctx context.Context, key string) (Instance, error)
 	Release(key string)
 	Shutdown(ctx context.Context)
+	// WaitDeleted returns once the plugin has deleted every instance whose
+	// acquisition was released, or with ctx's error.
+	WaitDeleted(ctx context.Context) error
 	// Restored returns the acquisitions restored from an earlier run since the
 	// last call, and whether the restore is still under way. A fleet without
 	// storage restores nothing.
@@ -67,6 +70,7 @@ type fleetImpl struct {
 	cancel  context.CancelFunc
 	kill    func()
 	restore *restore
+	gone    *deletions
 }
 
 // LookPath resolves a plugin path, name or OCI reference to its binary.
@@ -111,7 +115,8 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 	if err != nil {
 		return nil, err
 	}
-	group = removeOnHeartbeatFailure{InstanceGroup: group, log: opts.Logger}
+	gone := newDeletions()
+	group = removeOnHeartbeatFailure{InstanceGroup: group, log: opts.Logger, gone: gone}
 
 	log := opts.Logger
 	if log == nil {
@@ -161,7 +166,7 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 		cancel()
 		return nil, fmt.Errorf("configuring taskscaler schedules: %w", err)
 	}
-	return &fleetImpl{ts: ts, cancel: cancel, kill: kill, restore: rs}, nil
+	return &fleetImpl{ts: ts, cancel: cancel, kill: kill, restore: rs, gone: gone}, nil
 }
 
 func (f *fleetImpl) Acquire(ctx context.Context, key string) (Instance, error) {
@@ -172,7 +177,14 @@ func (f *fleetImpl) Acquire(ctx context.Context, key string) (Instance, error) {
 	return acq, nil
 }
 
-func (f *fleetImpl) Release(key string) { f.ts.Release(key) }
+func (f *fleetImpl) Release(key string) {
+	if acq := f.ts.Get(key); held(acq) {
+		f.gone.expect(acq.InstanceID())
+	}
+	f.ts.Release(key)
+}
+
+func (f *fleetImpl) WaitDeleted(ctx context.Context) error { return f.gone.wait(ctx) }
 
 func (f *fleetImpl) Restored() ([]Adopted, bool) {
 	if f.restore == nil {
@@ -182,9 +194,15 @@ func (f *fleetImpl) Restored() ([]Adopted, bool) {
 }
 
 // Shutdown stops the autoscaler, which deletes the instances, then kills the
-// plugin process.
+// plugin process. Restored acquisitions nothing adopted are released first, as
+// the autoscaler waits for every acquisition to be released.
 func (f *fleetImpl) Shutdown(ctx context.Context) {
 	f.cancel()
+	if f.restore != nil {
+		for _, key := range f.restore.keys {
+			f.Release(key)
+		}
+	}
 	f.ts.Shutdown(ctx)
 	f.kill()
 }

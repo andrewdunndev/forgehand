@@ -98,7 +98,8 @@ cosign verify-blob forgehand-linux-amd64 --bundle forgehand-linux-amd64.bundle \
 - `SIGUSR1` hands off, only when every scale set sets `use_static_credentials`
   (otherwise it is ignored and logged as an error): idle runners are removed,
   nothing new starts, and once no runner is waiting for a VM, starting,
-  listening, being removed or being adopted the daemon exits 0 without
+  listening, being removed or being adopted, and the VMs of the removed
+  runners are deleted, the daemon exits 0 without
   deleting the VMs of running jobs. During a drain or a handoff only
   `SIGTERM` and `SIGINT` act; `SIGQUIT` and `SIGUSR1` are logged and ignored.
   A tripped failure breaker during a handoff exits 1 and still leaves the VMs
@@ -147,7 +148,8 @@ systemctl kill --kill-whom=main -s SIGUSR1 forgehand
 systemctl start forgehand
 ```
 
-The old process removes idle runners and exits once only running jobs remain;
+The old process removes idle runners and exits once only running jobs remain
+and their VMs are deleted;
 the new one adopts them as in Restart. `--kill-whom=main` keeps the signal off
 the plugin child. With generated credentials `SIGUSR1` is ignored: drain with
 `SIGQUIT` (`systemctl stop`) and wait for the jobs instead.

@@ -22,7 +22,17 @@ func heartbeat(context.Context, provider.ConnectInfo) error { return nil }
 // about the instance and removes nothing.
 type removeOnHeartbeatFailure struct {
 	provider.InstanceGroup
-	log hclog.Logger
+	log  hclog.Logger
+	gone *deletions
+}
+
+// Decrease records which instances the plugin deleted.
+func (g removeOnHeartbeatFailure) Decrease(ctx context.Context, ids []string) ([]string, error) {
+	done, err := g.InstanceGroup.Decrease(ctx, ids)
+	if g.gone != nil {
+		g.gone.done(done)
+	}
+	return done, err
 }
 
 func (g removeOnHeartbeatFailure) Heartbeat(ctx context.Context, id string) error {
