@@ -8,10 +8,10 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/prometheus/client_golang v1.24.1
-	gitlab.com/gitlab-org/fleeting/fleeting v0.0.0-20260915191451-6ed75a33d303
+	gitlab.com/gitlab-org/fleeting/fleeting v0.0.0-20260923033724-d721fe1a7bb8
 	gitlab.com/gitlab-org/fleeting/fleeting-artifact v0.0.0-20260911011821-1b7c6957ad1d
 	gitlab.com/gitlab-org/fleeting/fleeting/metrics/prometheus v0.0.0-20260915191451-6ed75a33d303
-	gitlab.com/gitlab-org/fleeting/taskscaler v0.0.0-20260908152840-1f87885729aa
+	gitlab.com/gitlab-org/fleeting/taskscaler v0.0.0-20261023025524-7db01026e442
 	gitlab.com/gitlab-org/fleeting/taskscaler/metrics/prometheus v0.0.0-20260908152840-1f87885729aa
 )
 
