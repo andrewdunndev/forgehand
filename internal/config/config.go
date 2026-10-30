@@ -237,8 +237,8 @@ func (s *ScaleSet) validate(at string, fail func(string, ...any)) {
 	if s.Name == "" {
 		fail("%s: name is required", at)
 	}
-	if u, err := url.Parse(s.URL); err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
-		fail("%s: url must be the repository URL, for example https://github.com/owner/repo", at)
+	if !repositoryURL(s.URL) {
+		fail("%s: url must be https://github.com/<owner>/<repo>, for example https://github.com/owner/repo", at)
 	}
 	if len(s.Labels) == 0 {
 		fail("%s: labels is required, for example [\"self-hosted\", \"linux\"]", at)
@@ -274,4 +274,19 @@ func (s *ScaleSet) validate(at string, fail func(string, ...any)) {
 	if a.ConnectorConfig.UseStaticCredentials && a.ConnectorConfig.KeyPath == "" {
 		fail("%s: connector_config.use_static_credentials needs connector_config.key_path, the guest private key; or remove use_static_credentials to let the plugin generate a key", at)
 	}
+	if a.ConnectorConfig.UseStaticCredentials && a.ConnectorConfig.Username == "" {
+		fail("%s: connector_config.use_static_credentials needs connector_config.username, the guest account the key logs in as", at)
+	}
+}
+
+// repositoryURL reports whether raw is https://github.com/<owner>/<repo>:
+// exactly two path segments, no userinfo, query, fragment, trailing slash or .git.
+func repositoryURL(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host != "github.com" || u.User != nil ||
+		u.RawQuery != "" || u.ForceQuery || u.Fragment != "" || strings.Contains(raw, "#") {
+		return false
+	}
+	owner, repo, ok := strings.Cut(strings.TrimPrefix(u.EscapedPath(), "/"), "/")
+	return ok && owner != "" && repo != "" && !strings.Contains(repo, "/") && !strings.HasSuffix(repo, ".git")
 }

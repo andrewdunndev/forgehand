@@ -14,7 +14,8 @@ shutdown_timeout = 30
 [[scalesets]]
 # required: the scale set name. Created on GitHub at the first run.
 name = "example"
-# required: the repository URL the GitHub App is installed on.
+# required: the repository the GitHub App is installed on, as
+# https://github.com/<owner>/<repo> (no trailing slash or .git).
 url = "https://github.com/owner/repo"
 # required: workflows select this scale set with runs-on.
 labels = ["self-hosted", "example"]

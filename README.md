@@ -25,7 +25,8 @@ configuration schema is still changing.
 ## Prerequisites
 
 - A GitHub App installed on the repository. Each scale set serves one
-  repository, so N repositories need N scale sets. [Create the
+  repository, set as `url = "https://github.com/<owner>/<repo>"`, so N
+  repositories need N scale sets. [Create the
   App](https://docs.github.com/en/apps/creating-github-apps/registering-a-github-app/registering-a-github-app)
   with the repository permission Administration read and write and the webhook
   off, then install it and generate a private key. `client_id` is the App's

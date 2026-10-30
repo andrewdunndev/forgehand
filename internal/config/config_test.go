@@ -126,7 +126,9 @@ func TestParseRejects(t *testing.T) {
 		{"shutdown_timeout zero", func(s string) string { return strings.Replace(s, "shutdown_timeout = 30", "shutdown_timeout = 0", 1) }, "shutdown_timeout: must be positive"},
 		{"no scalesets", func(string) string { return `log_level = "info"` }, "at least one [[scalesets]]"},
 		{"no name", func(s string) string { return strings.Replace(s, `name = "example"`, "", 1) }, "name is required"},
-		{"bad url", func(s string) string { return strings.Replace(s, "https://github.com/owner/repo", "owner/repo", 1) }, "url must be"},
+		{"static without username", func(s string) string {
+			return strings.Replace(s, `username = "runner"`, "use_static_credentials = true", 1)
+		}, "use_static_credentials needs connector_config.username"},
 		{"no labels", func(s string) string { return strings.Replace(s, `labels = ["self-hosted", "example"]`, "", 1) }, "labels is required"},
 		{"empty label", func(s string) string { return strings.Replace(s, `"example"]`, `""]`, 1) }, "empty label"},
 		{"no client_id", func(s string) string { return strings.Replace(s, `client_id = "Iv1.example"`, "", 1) }, "github_app.client_id"},
@@ -202,5 +204,36 @@ func TestExampleConfigLoads(t *testing.T) {
 	s := cfg.ScaleSets[0]
 	if len(cfg.ScaleSets) != 1 || s.Autoscaler.ConnectorConfig.Protocol != "ssh" || len(s.Autoscaler.Policy) != 1 || cfg.ListenAddress != "127.0.0.1:9253" {
 		t.Errorf("example config = %+v", cfg)
+	}
+}
+
+func TestParseRejectsURLForms(t *testing.T) {
+	const want = "url must be https://github.com/<owner>/<repo>, for example https://github.com/owner/repo"
+	for _, u := range []string{
+		"owner/repo",
+		"",
+		"http://github.com/owner/repo",
+		"https://gitlab.com/owner/repo",
+		"https://github.com",
+		"https://github.com/",
+		"https://github.com/owner",
+		"https://github.com/owner/",
+		"https://github.com/owner/repo/",
+		"https://github.com/owner/repo.git",
+		"https://github.com/owner/repo/issues",
+		"https://github.com//repo",
+		"https://user@github.com/owner/repo",
+		"https://user:pass@github.com/owner/repo",
+		"https://github.com/owner/repo?tab=readme",
+		"https://github.com/owner/repo?",
+		"https://github.com/owner/repo#readme",
+		"https://github.com:8443/owner/repo",
+	} {
+		t.Run(u, func(t *testing.T) {
+			_, err := Parse([]byte(strings.Replace(valid, "https://github.com/owner/repo", u, 1)))
+			if err == nil || !strings.Contains(err.Error(), want) {
+				t.Errorf("err = %v, want it to contain %q", err, want)
+			}
+		})
 	}
 }

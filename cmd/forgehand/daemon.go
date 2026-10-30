@@ -202,6 +202,14 @@ func (u *unit) listenOnce(ctx context.Context) error {
 // breaker trips. SIGQUIT drains: idle runners go, running jobs finish. SIGTERM
 // and SIGINT stop within shutdown_timeout, running jobs included.
 func (d *daemon) run(ctx context.Context, sigs <-chan os.Signal) error {
+	if os.Getenv("STATE_DIRECTORY") == "" {
+		for _, s := range d.cfg.ScaleSets {
+			if s.Autoscaler.ConnectorConfig.UseStaticCredentials {
+				return fmt.Errorf("scaleset %q: STATE_DIRECTORY is not set: static guest credentials keep restart state there; run under systemd with StateDirectory=forgehand", s.Name)
+			}
+		}
+	}
+
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 

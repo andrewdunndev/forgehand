@@ -575,3 +575,31 @@ func TestOccupiedRunnerNameKeepsDaemonUpUntilItClears(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+func TestStaticCredentialsNeedStateDirectoryToRunNotToCheck(t *testing.T) {
+	t.Setenv("STATE_DIRECTORY", "")
+	static := func(s *config.ScaleSet) { s.Autoscaler.ConnectorConfig.UseStaticCredentials = true }
+
+	var out bytes.Buffer
+	if err := checkDaemon(t, github.NewFake(), nil, static).check(context.Background(), &out); err != nil {
+		t.Fatalf("check without STATE_DIRECTORY: %v", err)
+	}
+
+	cfg := testConfig(5)
+	static(&cfg.ScaleSets[0])
+	r := newRig(t, cfg)
+	err := r.d.run(context.Background(), r.sigs)
+	if err == nil || !strings.Contains(err.Error(), "STATE_DIRECTORY") {
+		t.Errorf("run err = %v, want it to name STATE_DIRECTORY", err)
+	}
+	if started, _ := r.fleetOptions(); started != 0 {
+		t.Errorf("fleet started %d times, want 0", started)
+	}
+
+	t.Setenv("STATE_DIRECTORY", t.TempDir())
+	r = newRig(t, cfg)
+	r.start()
+	r.wait("fleet start", func() bool { n, _ := r.fleetOptions(); return n == 1 })
+	r.sigs <- syscall.SIGTERM
+	<-r.done
+}
