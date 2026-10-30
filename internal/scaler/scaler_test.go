@@ -1540,3 +1540,76 @@ func TestRepeatedRestoredKeyAdoptsOnlyTheFirst(t *testing.T) {
 		t.Fatalf("live = %d, want the one adopted slot", n)
 	}
 }
+
+func waitHandoff(t *testing.T, ch <-chan error, what string) {
+	t.Helper()
+	select {
+	case err := <-ch:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal(what)
+	}
+}
+
+func TestHandoffReturnsWithBusySlotsAndKeepsTheirVMs(t *testing.T) {
+	r := newRig(t)
+	r.assigned(2)
+	r.busy("vm-1")
+	r.listening("vm-2")
+
+	handoff := make(chan error, 1)
+	go func() { handoff <- r.s.Handoff(context.Background()) }()
+	waitHandoff(t, handoff, "Handoff did not return with only a BUSY slot left")
+
+	if got := r.stateOfRunner("vm-1"); got != Busy {
+		t.Errorf("busy slot is %s", got)
+	}
+	if got := r.stateOfRunner("vm-2"); got != Done {
+		t.Errorf("listening slot is %s, want DONE", got)
+	}
+	r.wantReleased(1)
+}
+
+func TestHandoffWaitsForEverySlotThatIsNotBusy(t *testing.T) {
+	r := newRig(t)
+	r.assigned(1)
+	r.listening("vm-1")
+	r.api.SetRemoveErr(errors.New("502"))
+
+	handoff := make(chan error, 1)
+	go func() { handoff <- r.s.Handoff(context.Background()) }()
+	r.wantState("vm-1", Reaping)
+	select {
+	case <-handoff:
+		t.Fatal("Handoff returned with a REAPING slot")
+	case <-time.After(20 * time.Millisecond):
+	}
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
+	r.scale(nil)
+	waitHandoff(t, handoff, "Handoff did not wait for the REAPING slot to turn BUSY")
+	if got := r.stateOfRunner("vm-1"); got != Busy {
+		t.Errorf("slot is %s, want BUSY", got)
+	}
+	r.wantReleased(0)
+}
+
+func TestHandoffWaitsForAdoptingSlotsToClassify(t *testing.T) {
+	r := newRig(t)
+	r.api.SetRemoveErr(errors.New("502"))
+	r.restore("old-1", "vm-1")
+	r.wantState("vm-1", Adopting)
+
+	handoff := make(chan error, 1)
+	go func() { handoff <- r.s.Handoff(context.Background()) }()
+	select {
+	case <-handoff:
+		t.Fatal("Handoff returned with an ADOPTING slot")
+	case <-time.After(20 * time.Millisecond):
+	}
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
+	r.scale(nil)
+	waitHandoff(t, handoff, "Handoff did not return once the slot classified as BUSY")
+	r.wantReleased(0)
+}

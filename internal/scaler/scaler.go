@@ -99,6 +99,7 @@ type Scaler struct {
 	fatal     error
 	restoring bool
 	draining  bool
+	handoff   bool
 	stopped   bool
 	drained   chan struct{}
 	wg        sync.WaitGroup
@@ -204,9 +205,17 @@ func (s *Scaler) Run(ctx context.Context) error {
 
 // Drain stops spawning, cancels slots still waiting for a VM, reaps idle
 // runners at once and returns when every slot is terminal.
-func (s *Scaler) Drain(ctx context.Context) error {
+func (s *Scaler) Drain(ctx context.Context) error { return s.drain(ctx, false) }
+
+// Handoff drains like Drain but returns once no slot is waiting for a VM,
+// starting, listening, reaping or adopting. BUSY slots stay, including the ones
+// those states turn BUSY, so their VMs and runners outlive the caller.
+func (s *Scaler) Handoff(ctx context.Context) error { return s.drain(ctx, true) }
+
+func (s *Scaler) drain(ctx context.Context, handoff bool) error {
 	s.mu.Lock()
 	s.draining = true
+	s.handoff = handoff
 	s.adoptRestored()
 	for _, sl := range s.slots {
 		switch sl.state {
@@ -317,6 +326,18 @@ func (s *Scaler) evaluate() {
 			s.spawn(now)
 		}
 	}
+}
+
+// outstanding counts the slots a drain waits for: every live slot, or with a
+// handoff only those that are not BUSY.
+func (s *Scaler) outstanding() int {
+	n := 0
+	for _, sl := range s.slots {
+		if !sl.state.Terminal() && (!s.handoff || sl.state != Busy) {
+			n++
+		}
+	}
+	return n
 }
 
 func (s *Scaler) live() int {
@@ -667,6 +688,9 @@ func (s *Scaler) move(sl *slot, to State) bool {
 	s.log.Debug("slot moved", "slot", sl.key, "runner", sl.name, "from", sl.state, "to", to)
 	sl.state = to
 	sl.since = s.now()
+	if to == Busy && s.handoff {
+		s.settled()
+	}
 	return true
 }
 
@@ -684,7 +708,7 @@ func (s *Scaler) terminate(sl *slot, to State) bool {
 }
 
 func (s *Scaler) settled() {
-	if !s.draining || s.restoring || s.live() > 0 {
+	if !s.draining || s.restoring || s.outstanding() > 0 {
 		return
 	}
 	select {

@@ -95,6 +95,11 @@ cosign verify-blob forgehand-linux-amd64 --bundle forgehand-linux-amd64.bundle \
 
 - `SIGQUIT` drains: idle runners are removed and running jobs finish before the
   daemon exits. `SIGTERM` or `SIGINT` during a drain ends it and stops within `shutdown_timeout`.
+- `SIGUSR1` hands off, only when every scale set sets `use_static_credentials`
+  (otherwise it is ignored and logged as an error): idle runners are removed,
+  nothing new starts, and once no runner is starting, listening or being
+  removed the daemon exits 0 without deleting the VMs of running jobs. See
+  Upgrade.
 - `SIGTERM` and `SIGINT` stop within `shutdown_timeout` seconds, running jobs
   included.
 - A crash (`SIGKILL`) leaves the VMs and their runners running; see Restart.
@@ -122,6 +127,23 @@ directory, readable only by the service user and root.
 Without static credentials the plugin generates the guest key itself, and a
 restart cannot reach the VMs an earlier run left. They are deleted and their
 runners removed, and any job they ran is lost.
+
+## Upgrade
+
+With `use_static_credentials = true` on every scale set, a running job survives
+an upgrade:
+
+```
+systemctl kill --kill-whom=main -s SIGUSR1 forgehand
+# wait for the service to exit
+# replace the binary
+systemctl start forgehand
+```
+
+The old process removes idle runners and exits once only running jobs remain;
+the new one adopts them as in Restart. `--kill-whom=main` keeps the signal off
+the plugin child. With generated credentials `SIGUSR1` is ignored: drain with
+`SIGQUIT` (`systemctl stop`) and wait for the jobs instead.
 
 ## Instance health
 

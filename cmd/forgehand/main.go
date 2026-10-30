@@ -103,7 +103,7 @@ func execute(args []string, stdout, stderr io.Writer) int {
 		err = d.check(ctx, stdout)
 	default:
 		sigs := make(chan os.Signal, 4)
-		signal.Notify(sigs, syscall.SIGQUIT, syscall.SIGTERM, syscall.SIGINT)
+		signal.Notify(sigs, syscall.SIGQUIT, syscall.SIGUSR1, syscall.SIGTERM, syscall.SIGINT)
 		err = d.run(context.Background(), sigs)
 	}
 	if err != nil {

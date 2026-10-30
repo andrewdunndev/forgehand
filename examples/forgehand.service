@@ -17,6 +17,7 @@ RestartSec=5s
 # longest job you allow, or that job is killed mid-run.
 KillSignal=SIGQUIT
 # SIGQUIT must reach only the daemon; the plugin child survives the drain.
+# Upgrades use SIGUSR1 to the main process instead; see the README.
 KillMode=mixed
 TimeoutStopSec=6h30min
 

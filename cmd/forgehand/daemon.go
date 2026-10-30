@@ -250,14 +250,33 @@ func (d *daemon) run(ctx context.Context, sigs <-chan os.Signal) error {
 		}()
 	}
 
-	select {
-	case err = <-fatal:
-		d.log.Error("stopping", "error", err)
-	case sig := <-sigs:
-		d.log.Info("signal received", "signal", sig)
-		if sig == syscall.SIGQUIT {
-			err = d.drain(units, sigs, fatal)
+	handoff := false
+wait:
+	for {
+		select {
+		case err = <-fatal:
+			d.log.Error("stopping", "error", err)
+			break wait
+		case sig := <-sigs:
+			d.log.Info("signal received", "signal", sig)
+			switch sig {
+			case syscall.SIGQUIT:
+				_, err = d.drain(units, sigs, fatal, false)
+				break wait
+			case syscall.SIGUSR1:
+				if !d.canHandOff() {
+					d.log.Error("ignoring SIGUSR1: handing off needs use_static_credentials on every scale set")
+					continue
+				}
+				handoff, err = d.drain(units, sigs, fatal, true)
+				break wait
+			default:
+				break wait
+			}
 		}
+	}
+	if handoff {
+		return d.release(units, cancel)
 	}
 	if stopErr := d.stop(units, cancel); err == nil {
 		err = stopErr
@@ -319,11 +338,27 @@ func (d *daemon) serveMetrics() (prometheus.Registerer, func(), error) {
 	return reg, func() { _ = srv.Close() }, nil
 }
 
-// drain returns once every scale set has no runner left, or sooner when a
-// forceful signal or a tripped breaker asks for the exit.
-func (d *daemon) drain(units []*unit, sigs <-chan os.Signal, fatal <-chan error) error {
+// canHandOff reports whether every scale set keeps restart state, so a new
+// process can adopt the VMs this one leaves.
+func (d *daemon) canHandOff() bool {
+	for _, s := range d.cfg.ScaleSets {
+		if !s.Autoscaler.ConnectorConfig.UseStaticCredentials {
+			return false
+		}
+	}
+	return true
+}
+
+// drain returns once every scale set has no runner left, or with a handoff
+// none but busy ones, and reports whether it got there. A forceful signal or a
+// tripped breaker ends it sooner.
+func (d *daemon) drain(units []*unit, sigs <-chan os.Signal, fatal <-chan error, handoff bool) (bool, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	wait := (*scaler.Scaler).Drain
+	if handoff {
+		wait = (*scaler.Scaler).Handoff
+	}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -332,7 +367,7 @@ func (d *daemon) drain(units []*unit, sigs <-chan os.Signal, fatal <-chan error)
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				if err := u.scaler.Drain(ctx); err != nil {
+				if err := wait(u.scaler, ctx); err != nil {
 					u.log.Warn("draining", "error", err)
 				}
 			}()
@@ -342,13 +377,13 @@ func (d *daemon) drain(units []*unit, sigs <-chan os.Signal, fatal <-chan error)
 	for {
 		select {
 		case <-done:
-			return nil
+			return true, nil
 		case err := <-fatal:
-			return err
+			return false, err
 		case sig := <-sigs:
-			if sig != syscall.SIGQUIT {
+			if sig == syscall.SIGTERM || sig == syscall.SIGINT {
 				d.log.Warn("forceful signal during drain", "signal", sig)
-				return nil
+				return false, nil
 			}
 		}
 	}
@@ -449,6 +484,23 @@ func (d *daemon) checkOne(ctx context.Context, cfg config.ScaleSet, out io.Write
 		_, _ = fmt.Fprintf(out, "%s: authenticated; the scale set will be created at the first run\n", cfg.Name)
 	default:
 		_, _ = fmt.Fprintf(out, "%s: authenticated; scale set %d exists with the configured labels\n", cfg.Name, set.ID)
+	}
+	return nil
+}
+
+// release ends a handoff: the listeners stop and the process may exit with
+// the fleets untouched, so busy VMs and their runners keep running for the
+// next process to adopt.
+func (d *daemon) release(units []*unit, stopListening context.CancelFunc) error {
+	stopListening()
+	timer := time.NewTimer(d.cfg.ShutdownDuration())
+	defer timer.Stop()
+	for _, u := range units {
+		select {
+		case <-u.listened:
+		case <-timer.C:
+			return nil
+		}
 	}
 	return nil
 }

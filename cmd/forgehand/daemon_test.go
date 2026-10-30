@@ -641,3 +641,56 @@ func TestStorageIsPerScaleSetAndOnlyForStaticCredentials(t *testing.T) {
 		})
 	}
 }
+
+func TestSIGUSR1HandsOffLeavingBusyVMsAndNeverShutsTheFleetDown(t *testing.T) {
+	t.Setenv("STATE_DIRECTORY", t.TempDir())
+	cfg := testConfig(5)
+	cfg.ScaleSets[0].Autoscaler.ConnectorConfig.UseStaticCredentials = true
+	r := newRig(t, cfg)
+	r.api.Session.Info.Statistics = assigned(2)
+	r.start()
+
+	idle, a := r.boot("vm-a")
+	_, b := r.boot("vm-b")
+	a.hooks.Listening()
+	b.hooks.Listening()
+	b.hooks.RunningJob()
+
+	r.sigs <- syscall.SIGUSR1
+	if err, ok := r.result(3 * time.Second); !ok || err != nil {
+		t.Fatalf("run = %v (returned %v), want a clean exit with a job running", err, ok)
+	}
+	if released := r.fl.Released(); len(released) != 1 || released[0] != idle {
+		t.Errorf("released %v, want only the idle %s", released, idle)
+	}
+	if r.fl.IsShutdown() {
+		t.Error("fleet shut down by a handoff")
+	}
+}
+
+func TestSIGUSR1IsIgnoredWithGeneratedCredentials(t *testing.T) {
+	r := newRig(t, testConfig(5))
+	r.api.Session.Info.Statistics = assigned(1)
+	r.start()
+	_, a := r.boot("vm-a")
+	a.hooks.Listening()
+
+	r.sigs <- syscall.SIGUSR1
+	r.wait("the ignored signal logged as an error", func() bool {
+		return strings.Contains(r.out.String(), "[ERROR] ignoring SIGUSR1")
+	})
+	if err, ok := r.result(200 * time.Millisecond); ok {
+		t.Fatalf("run returned (%v) after an ignored SIGUSR1", err)
+	}
+	if got := r.fl.Released(); len(got) != 0 {
+		t.Errorf("released %v after an ignored SIGUSR1", got)
+	}
+
+	r.sigs <- syscall.SIGTERM
+	if _, ok := r.result(3 * time.Second); !ok {
+		t.Fatal("run did not stop on SIGTERM")
+	}
+	if !r.fl.IsShutdown() {
+		t.Error("fleet not shut down by SIGTERM")
+	}
+}
