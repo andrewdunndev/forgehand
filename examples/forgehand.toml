@@ -64,3 +64,40 @@ timeout = "10m"
 # Idle VMs kept warm. idle_count = 0 starts a VM only when a job arrives.
 [[scalesets.autoscaler.policy]]
 idle_count = 0
+
+# A hardware class is its own scale set: one [[scalesets]] per class, each with
+# its own labels, name_prefix and plugin_config, so a workflow picks the class
+# with runs-on. These are fleeting-plugin-libvirt's keys; its README has the rest.
+#
+# [[scalesets]]
+# name = "example-tpm"
+# url = "https://github.com/owner/repo"
+# labels = ["self-hosted", "example-tpm"]
+# (github_app, runner and connector_config as above)
+#
+# [scalesets.autoscaler]
+# plugin = "fleeting-plugin-libvirt"
+# max_instances = 2
+#
+# [scalesets.autoscaler.plugin_config]
+# pool_name = "images"
+# base_volume_name = "golden.qcow2"
+# name_prefix = "forgehand-tpm-"
+# tpm = true
+#
+# [[scalesets]]
+# name = "example-pci"
+# url = "https://github.com/owner/repo"
+# labels = ["self-hosted", "example-pci"]
+# (github_app, runner and connector_config as above)
+#
+# [scalesets.autoscaler]
+# plugin = "fleeting-plugin-libvirt"
+# # at most the number of addresses in pci_devices
+# max_instances = 1
+#
+# [scalesets.autoscaler.plugin_config]
+# pool_name = "images"
+# base_volume_name = "golden.qcow2"
+# name_prefix = "forgehand-pci-"
+# pci_devices = ["0000:01:00.0"]

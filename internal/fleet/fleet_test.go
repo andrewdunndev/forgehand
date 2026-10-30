@@ -259,6 +259,48 @@ func TestPluginConfigIsPassedThroughUnchanged(t *testing.T) {
 	}
 }
 
+func TestPluginConfigListsReachThePluginAsJSON(t *testing.T) {
+	cfg, err := config.Parse([]byte(`
+[[scalesets]]
+name = "gpu"
+url = "https://github.com/owner/repo"
+labels = ["self-hosted", "gpu"]
+  [scalesets.github_app]
+  client_id = "Iv1.example"
+  installation_id = 1
+  private_key_path = "/run/credentials/app.pem"
+  [scalesets.runner]
+  dir = "/opt/actions-runner"
+  [scalesets.autoscaler]
+  plugin = "fleeting-plugin-libvirt"
+  max_instances = 2
+    [scalesets.autoscaler.plugin_config]
+    tpm = true
+    pci_devices = ["0000:01:00.0", "0000:02:00.0"]
+    [scalesets.autoscaler.connector_config]
+    username = "runner"
+  [[scalesets.autoscaler.policy]]
+  idle_count = 0
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := pluginConfig(cfg.ScaleSets[0].Autoscaler)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got struct {
+		PCIDevices []string `json:"pci_devices"`
+		TPM        bool     `json:"tpm"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("plugin config %s: %v", b, err)
+	}
+	if !slices.Equal(got.PCIDevices, []string{"0000:01:00.0", "0000:02:00.0"}) || !got.TPM {
+		t.Errorf("plugin config = %s", b)
+	}
+}
+
 func TestFakeGrantAndCancel(t *testing.T) {
 	f := NewFake(Options{})
 	ctx, cancel := context.WithCancel(context.Background())

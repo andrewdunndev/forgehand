@@ -81,6 +81,12 @@ forgehand run -c forgehand.toml
 [`examples/forgehand.toml`](examples/forgehand.toml) comments each required key;
 [`examples/forgehand.service`](examples/forgehand.service) is a hardened systemd unit.
 
+Hardware is plugin config that forgehand passes through untouched: `tpm` and `pci_devices`
+in `plugin_config`, one scale set per hardware class so `runs-on` selects it. A scale set with
+`pci_devices` sets `max_instances` at most the number of addresses. `check` does not validate
+`plugin_config`; a bad hardware key fails when `run` starts the plugin. The example config
+shows both, and the [plugin README](https://gitlab.com/dunn.dev/fleeting-plugin-libvirt) defines the keys.
+
 ## Verify a release
 
 Download a binary from the releases page and its `.bundle` from the package registry (`https://gitlab.com/api/v4/projects/dunn.dev%2Fforgehand/packages/generic/forgehand/<tag>/forgehand-linux-amd64.bundle`; substitute the platform), then:
