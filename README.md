@@ -82,7 +82,8 @@ forgehand run -c forgehand.toml
 
 `check` resolves the plugin, finds the key files that are set and authenticates the App, then prints `ok`. It does not start the plugin; `plugin_config` is validated when `run` starts it. It creates nothing and starts no VM.
 [`examples/forgehand.toml`](examples/forgehand.toml) comments each required key;
-[`examples/forgehand.service`](examples/forgehand.service) is a systemd unit that runs as a `DynamicUser` and passes secrets with `LoadCredential`.
+[`examples/forgehand.service`](examples/forgehand.service) is a hardened systemd unit (sandboxed, no capabilities, private state `0700`) that runs as a `DynamicUser` and passes secrets with `LoadCredential`.
+With `UMask=0077`, a plugin `lock_file` shared with other accounts must be created beforehand with the wanted mode; an `admit_command` runs inside the same sandbox (`ProcSubset=pid` hides most of `/proc`).
 
 Hardware is plugin config that forgehand passes through untouched: `tpm` and `pci_devices`
 in `plugin_config`, one scale set per hardware class so `runs-on` selects it. A scale set with

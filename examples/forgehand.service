@@ -33,17 +33,40 @@ DynamicUser=yes
 # The libvirt plugin needs the libvirt socket.
 #SupplementaryGroups=libvirt
 # Restart state for scale sets with use_static_credentials (STATE_DIRECTORY).
+# The files hold the guest private key, so keep them private to the service.
 StateDirectory=forgehand
+StateDirectoryMode=0700
+UMask=0077
 Environment=HOME=/var/lib/forgehand
 Environment=FLEETING_PLUGIN_PATH=/usr/local/lib/fleeting/plugins
+CapabilityBoundingSet=
+AmbientCapabilities=
 NoNewPrivileges=yes
 ProtectSystem=strict
 ReadOnlyPaths=/usr/local/lib/fleeting
 ProtectHome=yes
 PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelModules=yes
 ProtectKernelTunables=yes
+ProtectKernelLogs=yes
 ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+# Hides other processes' /proc entries.
+ProtectProc=invisible
+ProcSubset=pid
+# Unix for the libvirt socket and the plugin's RPC socket; inet for GitHub,
+# metrics and guest SSH.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=yes
+RestrictRealtime=yes
 RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
 
 [Install]
 WantedBy=multi-user.target
