@@ -65,6 +65,7 @@ type daemon struct {
 	sweepInterval              time.Duration
 	sweepAttempts              int
 	metricsAddr                string
+	metricsSrv                 *http.Server
 	now                        func() time.Time
 }
 
@@ -342,7 +343,8 @@ func (d *daemon) serveMetrics() (prometheus.Registerer, func(), error) {
 	reg := prometheus.NewRegistry()
 	mux := http.NewServeMux()
 	mux.Handle("/metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
-	srv := &http.Server{Handler: mux}
+	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
+	d.metricsSrv = srv
 	go func() { _ = srv.Serve(ln) }()
 	return reg, func() { _ = srv.Close() }, nil
 }

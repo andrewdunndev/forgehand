@@ -926,3 +926,17 @@ func TestHandoffGivesUpOnSlowDeletionsAtShutdownTimeout(t *testing.T) {
 		t.Error("fleet shut down by a handoff")
 	}
 }
+
+func TestMetricsServerBoundsHeaderReads(t *testing.T) {
+	cfg := testConfig(5)
+	cfg.ListenAddress = "127.0.0.1:0"
+	d := newDaemon(cfg, deps{}, hclog.NewNullLogger())
+	_, stop, err := d.serveMetrics()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stop()
+	if d.metricsSrv.ReadHeaderTimeout <= 0 {
+		t.Fatal("metrics server has no ReadHeaderTimeout")
+	}
+}
