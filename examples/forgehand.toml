@@ -102,4 +102,5 @@ idle_count = 0
 # pool_name = "images"
 # base_volume_name = "golden.qcow2"
 # name_prefix = "forgehand-pci-"
+# a passed-through device may keep state between jobs: serve trusted repositories only (see the plugin README)
 # pci_devices = ["0000:01:00.0"]

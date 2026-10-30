@@ -18,9 +18,10 @@ rejected, because each VM runs one job.
 
 ## Status
 
-Pre-release. The tests take one job end to end against fleeting's dummy plugin,
-but forgehand has not yet run against real GitHub and a real VM. The
-configuration schema is still changing.
+forgehand has run end to end against real GitHub (a GitHub App on a user-owned
+repository) and real libvirt VMs, including restart adoption, the upgrade
+handoff, UEFI Secure Boot, a vTPM and PCI passthrough. Before 1.0 the
+configuration may still change in a minor release; the release notes say how.
 
 ## Prerequisites
 
@@ -47,6 +48,8 @@ configuration schema is still changing.
   - `autoscaler.instance_ready_command` gates readiness: a VM takes a job only
     after it exits 0 over SSH, and the connection retries until `connector_config.timeout`.
     Set it (`true` suffices) unless the image brings SSH up before the plugin reports an address
+- Guest host keys are not verified, so guests need an isolated network; see the Guest network section of [SECURITY.md](SECURITY.md).
+- The fleeting plugin runs as the same user as forgehand and is trusted code.
 
 ## Scale set names
 
@@ -79,13 +82,13 @@ forgehand run -c forgehand.toml
 
 `check` resolves the plugin, finds the key files that are set and authenticates the App, then prints `ok`. It does not start the plugin; `plugin_config` is validated when `run` starts it. It creates nothing and starts no VM.
 [`examples/forgehand.toml`](examples/forgehand.toml) comments each required key;
-[`examples/forgehand.service`](examples/forgehand.service) is a hardened systemd unit.
+[`examples/forgehand.service`](examples/forgehand.service) is a systemd unit that runs as a `DynamicUser` and passes secrets with `LoadCredential`.
 
 Hardware is plugin config that forgehand passes through untouched: `tpm` and `pci_devices`
 in `plugin_config`, one scale set per hardware class so `runs-on` selects it. A scale set with
 `pci_devices` sets `max_instances` at most the number of addresses. Each `pci_devices` scale set needs its own pool, disjoint from every other scale set's; overlap makes
 `max_instances` overstate capacity. The example config
-shows both, and the [plugin README](https://gitlab.com/dunn.dev/fleeting-plugin-libvirt) defines the keys.
+shows both, and the [plugin README](https://gitlab.com/dunn.dev/fleeting-plugin-libvirt) defines the keys. A passed-through device may keep state between jobs, so serve trusted repositories only; see the plugin README.
 
 ## Verify a release
 
