@@ -36,6 +36,11 @@ disclosure date within thirty days. Please do not open a public issue first.
 ## Guest network
 
 Guest SSH host keys are not verified, because fleeting's connector ignores
-them. The guest network must stop guests spoofing each other's IP or MAC: put
-guests on an isolated libvirt network or isolated bridge ports and apply the
-`clean-traffic` nwfilter (with SR-IOV hostdev, VF spoofchk instead).
+them. The guest network must stop guests spoofing each other's IP or MAC. Port
+isolation alone does not: a guest's ARP reply can still reach the host and
+redirect its SSH, and only a filter stops that. Set the libvirt plugin's opt-in
+`nwfilter` key (and `nwfilter_parameters` where the filter needs them) to an
+existing nwfilter, and use `clean-traffic`; the [plugin
+README](https://gitlab.com/dunn.dev/fleeting-plugin-libvirt) defines the keys
+and parameters. With SR-IOV hostdev there is no nwfilter; VF spoofchk is the
+control instead.

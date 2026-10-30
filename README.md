@@ -13,8 +13,9 @@ takes a fresh VM from a [fleeting](https://gitlab.com/gitlab-org/fleeting/fleeti
 plugin, starts a just-in-time runner on it over SSH, and releases the VM when the
 job ends. [taskscaler](https://gitlab.com/gitlab-org/fleeting/taskscaler) drives
 capacity, so most `[runners.autoscaler]` settings from gitlab-runner carry over
-and any fleeting plugin should fit. `capacity_per_instance` and `max_use_count` are
-rejected, because each VM runs one job.
+and any fleeting plugin should fit. `capacity_per_instance`, `max_use_count` and
+`delete_instances_on_shutdown` are rejected, because each VM runs one job and
+forgehand deletes its VMs when it stops (the `SIGUSR1` handoff is the one exception).
 
 ## Status
 
@@ -80,6 +81,12 @@ forgehand check -c forgehand.toml
 forgehand run -c forgehand.toml
 ```
 
+The example sets `private_key_path` under `/run/credentials/`, which exists only inside the unit. To check that config, keep the key at `/etc/forgehand/app.pem` (mode `0600`, root) and load it the way the unit does:
+
+```
+systemd-run --pipe --wait -p DynamicUser=yes -p LoadCredential=app.pem:/etc/forgehand/app.pem /usr/local/bin/forgehand check -c /etc/forgehand/forgehand.toml
+```
+
 `check` resolves the plugin, finds the key files that are set and authenticates the App, then prints `ok`. It does not start the plugin; `plugin_config` is validated when `run` starts it. It creates nothing and starts no VM.
 [`examples/forgehand.toml`](examples/forgehand.toml) comments each required key;
 [`examples/forgehand.service`](examples/forgehand.service) is a hardened systemd unit (sandboxed, no capabilities, private state `0700`) that runs as a `DynamicUser` and passes secrets with `LoadCredential`.
@@ -90,6 +97,29 @@ in `plugin_config`, one scale set per hardware class so `runs-on` selects it. A 
 `pci_devices` sets `max_instances` at most the number of addresses. Each `pci_devices` scale set needs its own pool, disjoint from every other scale set's; overlap makes
 `max_instances` overstate capacity. The example config
 shows both, and the [plugin README](https://gitlab.com/dunn.dev/fleeting-plugin-libvirt) defines the keys. A passed-through device may keep state between jobs, so serve trusted repositories only; see the plugin README.
+
+## Configuration keys
+
+[`examples/forgehand.toml`](examples/forgehand.toml) shows the required keys.
+Keys whose defaults forgehand sets itself:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `runner.listen_timeout` | `3m` | how long a started runner may take to start listening for a job |
+| `runner.idle_timeout` | `5m` | how long a listening runner waits for a job before its VM is released |
+| `autoscaler.instance_acquire_timeout` | `15m` | how long a job waits for a VM |
+| `shutdown_timeout` (top level) | `30` | seconds to drain on shutdown |
+
+The remaining `[scalesets.autoscaler]` timing keys (`update_interval`,
+`update_interval_when_expecting`, `deletion_retry_interval`,
+`shutdown_deletion_interval`, `shutdown_deletion_retries`), the `scale_throttle`
+table, the `[[scalesets.autoscaler.policy]]` tables (`periods`, `timezone`,
+`idle_count`, `idle_time`, `scale_factor`, `scale_factor_limit`,
+`preemptive_mode`) and the `connector_config` keys (`protocol_port`,
+`keepalive`, `use_external_addr`, among others) take taskscaler's defaults and
+mean what they do in GitLab's
+[`[runners.autoscaler]`](https://docs.gitlab.com/runner/configuration/advanced-configuration/#the-runnersautoscaler-section)
+documentation. Unknown keys are refused, so a typo fails at load, and so is `connector_config.password`: secrets reach forgehand only as credentials.
 
 ## Verify a release
 
