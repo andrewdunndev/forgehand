@@ -29,6 +29,8 @@ LoadCredential=app.pem:/etc/forgehand/app.pem
 # The plugin runs as a child under these limits. If it needs a socket, device
 # or path outside them, grant it with SupplementaryGroups= or ReadWritePaths=.
 DynamicUser=yes
+# The libvirt plugin needs the libvirt socket.
+#SupplementaryGroups=libvirt
 StateDirectory=forgehand
 Environment=HOME=/var/lib/forgehand
 Environment=FLEETING_PLUGIN_PATH=/usr/local/lib/fleeting/plugins

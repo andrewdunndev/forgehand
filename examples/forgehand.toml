@@ -32,7 +32,7 @@ dir = "/opt/actions-runner"
 
 [scalesets.autoscaler]
 # required: a fleeting plugin, as a binary path, a name on PATH or an OCI reference.
-plugin = "fleeting-plugin-example"
+plugin = "fleeting-plugin-libvirt"
 # required: the most VMs this scale set may hold at once.
 max_instances = 4
 # Readiness gate. Run in the guest over SSH once it connects (the connection
@@ -43,9 +43,11 @@ instance_ready_command = "true"
 instance_acquire_timeout = "15m"
 
 # The keys here belong to the plugin; forgehand passes them through untouched.
-# Each scale set needs its own name_prefix.
+# Each scale set needs its own name_prefix. These are fleeting-plugin-libvirt's.
 [scalesets.autoscaler.plugin_config]
-image = "runner-image"
+pool_name = "images"
+base_volume_name = "golden.qcow2"
+name_prefix = "forgehand-"
 
 [scalesets.autoscaler.connector_config]
 protocol = "ssh"
