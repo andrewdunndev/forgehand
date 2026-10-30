@@ -242,3 +242,81 @@ func TestFleetWithoutStorageKeepsTheConfiguredSchedule(t *testing.T) {
 		t.Errorf("schedule = %+v, want the configured one", s)
 	}
 }
+
+// scribbler writes into the schedules it is given, as taskscaler does.
+type scribbler struct {
+	taskscaler.Taskscaler
+}
+
+func (scribbler) ConfigureSchedule(s ...taskscaler.Schedule) error {
+	for i := range s {
+		s[i].IdleCount = -1
+	}
+	return nil
+}
+
+func TestGuardNeverLetsTaskscalerWriteItsBaseSchedules(t *testing.T) {
+	for _, n := range []int{0, 2} {
+		base := []taskscaler.Schedule{{IdleCount: 3}, {IdleCount: 1}}
+		out := adjusted(base, n)
+		out[0].IdleCount = -1
+		if base[0].IdleCount != 3 {
+			t.Errorf("adjusted(base, %d) shares base's backing array", n)
+		}
+	}
+
+	g := newPoolGuard([]taskscaler.Schedule{{IdleCount: 3}, {IdleCount: 1}})
+	if err := g.start(scribbler{}); err != nil {
+		t.Fatal(err)
+	}
+	if g.base[0].IdleCount != 3 || g.base[1].IdleCount != 1 {
+		t.Errorf("start let taskscaler write the base schedules: %+v", g.base)
+	}
+	g.note("a")
+	if g.base[0].IdleCount != 3 || g.base[1].IdleCount != 1 {
+		t.Errorf("note let taskscaler write the base schedules: %+v", g.base)
+	}
+}
+
+// orderedRelease records whether the guard held the instance when taskscaler
+// was told to release its key.
+type orderedRelease struct {
+	taskscaler.Taskscaler
+	g       *poolGuard
+	id      string
+	mu      sync.Mutex
+	noted   bool
+	release int
+}
+
+func (o *orderedRelease) Release(key string) {
+	o.g.mu.Lock()
+	_, ok := o.g.pending[o.id]
+	o.g.mu.Unlock()
+	o.mu.Lock()
+	o.noted = ok
+	o.release++
+	o.mu.Unlock()
+	o.Taskscaler.Release(key)
+}
+
+func TestReleaseNotesTheInstanceBeforeTaskscalerMarksIt(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	group := &dummy.InstanceGroup{MaxSize: 4}
+	busy := group.AddInstance(provider.StateRunning)
+	pool := group.AddInstance(provider.StateRunning)
+	saveInstance(t, dir, busy, "old-1", false)
+	saveInstance(t, dir, pool, "", false)
+
+	f, _ := poolFleet(t, group, dir)
+	restored(t, f)
+	o := &orderedRelease{Taskscaler: f.ts, g: f.guard, id: busy}
+	f.ts = o
+	f.Release("old-1")
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.release != 1 || !o.noted {
+		t.Errorf("releases = %d, guard held the instance at the release = %t, want 1 and true", o.release, o.noted)
+	}
+}
