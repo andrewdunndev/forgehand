@@ -297,23 +297,29 @@ func (d *daemon) starting(ctx context.Context, cfg config.ScaleSet, metrics prom
 		u, err := d.start(ctx, cfg, metrics)
 		res <- result{u, err}
 	}()
-	select {
-	case r := <-res:
-		return r.u, nil, r.err
-	case sig := <-sigs:
-		cancel()
+	for {
 		select {
 		case r := <-res:
-			return r.u, sig, nil
-		case <-time.After(d.cfg.ShutdownDuration()):
-			go func() {
-				if late := <-res; late.u != nil {
-					ctx, stop := context.WithTimeout(context.Background(), d.cfg.ShutdownDuration())
-					defer stop()
-					late.u.fleet.Shutdown(ctx)
-				}
-			}()
-			return nil, sig, nil
+			return r.u, nil, r.err
+		case sig := <-sigs:
+			if sig == syscall.SIGUSR1 {
+				d.log.Error("ignoring SIGUSR1: a handoff waits until every scale set has started")
+				continue
+			}
+			cancel()
+			select {
+			case r := <-res:
+				return r.u, sig, nil
+			case <-time.After(d.cfg.ShutdownDuration()):
+				go func() {
+					if late := <-res; late.u != nil {
+						ctx, stop := context.WithTimeout(context.Background(), d.cfg.ShutdownDuration())
+						defer stop()
+						late.u.fleet.Shutdown(ctx)
+					}
+				}()
+				return nil, sig, nil
+			}
 		}
 	}
 }

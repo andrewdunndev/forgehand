@@ -694,3 +694,55 @@ func TestSIGUSR1IsIgnoredWithGeneratedCredentials(t *testing.T) {
 		t.Error("fleet not shut down by SIGTERM")
 	}
 }
+
+func TestSIGUSR1NeedsStaticCredentialsOnEveryScaleSet(t *testing.T) {
+	for _, static := range [][2]bool{{true, false}, {false, true}} {
+		t.Setenv("STATE_DIRECTORY", t.TempDir())
+		cfg := testConfig(5)
+		second := cfg.ScaleSets[0]
+		second.Name = "second"
+		cfg.ScaleSets = append(cfg.ScaleSets, second)
+		for i := range cfg.ScaleSets {
+			cfg.ScaleSets[i].Autoscaler.ConnectorConfig.UseStaticCredentials = static[i]
+		}
+		r := newRig(t, cfg)
+		r.start()
+		r.wait("both scale sets serving", func() bool { n, _ := r.fleetOptions(); return n == 2 })
+
+		r.sigs <- syscall.SIGUSR1
+		r.wait("the ignored signal logged as an error", func() bool {
+			return strings.Contains(r.out.String(), "[ERROR] ignoring SIGUSR1")
+		})
+		if err, ok := r.result(200 * time.Millisecond); ok {
+			t.Fatalf("%v: run returned (%v) after an ignored SIGUSR1", static, err)
+		}
+		r.sigs <- syscall.SIGTERM
+		if _, ok := r.result(3 * time.Second); !ok {
+			t.Fatalf("%v: run did not stop on SIGTERM", static)
+		}
+	}
+}
+
+func TestSIGUSR1DuringStartupIsIgnored(t *testing.T) {
+	for _, static := range []bool{false, true} {
+		t.Setenv("STATE_DIRECTORY", t.TempDir())
+		cfg := testConfig(5)
+		cfg.ScaleSets[0].Autoscaler.ConnectorConfig.UseStaticCredentials = static
+		r := newRig(t, cfg)
+		r.d.deps.newAPI = func(config.ScaleSet) (github.API, error) { return hangingAPI{r.api}, nil }
+		r.start()
+		time.Sleep(50 * time.Millisecond)
+
+		r.sigs <- syscall.SIGUSR1
+		r.wait("the ignored signal logged as an error", func() bool {
+			return strings.Contains(r.out.String(), "[ERROR] ignoring SIGUSR1")
+		})
+		if err, ok := r.result(200 * time.Millisecond); ok {
+			t.Fatalf("static=%v: run returned (%v) after SIGUSR1 during startup", static, err)
+		}
+		r.sigs <- syscall.SIGTERM
+		if _, ok := r.result(5 * time.Second); !ok {
+			t.Fatalf("static=%v: run did not stop on SIGTERM", static)
+		}
+	}
+}

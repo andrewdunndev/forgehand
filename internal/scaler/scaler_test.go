@@ -1613,3 +1613,23 @@ func TestHandoffWaitsForAdoptingSlotsToClassify(t *testing.T) {
 	waitHandoff(t, handoff, "Handoff did not return once the slot classified as BUSY")
 	r.wantReleased(0)
 }
+
+func TestHandoffWaitsForStartingSlots(t *testing.T) {
+	r := newRig(t)
+	r.assigned(1)
+	r.boot("vm-1")
+	if got := r.stateOfRunner("vm-1"); got != Starting {
+		t.Fatalf("slot is %s, want STARTING", got)
+	}
+
+	handoff := make(chan error, 1)
+	go func() { handoff <- r.s.Handoff(context.Background()) }()
+	select {
+	case <-handoff:
+		t.Fatal("Handoff returned with a STARTING slot")
+	case <-time.After(20 * time.Millisecond):
+	}
+	r.exit("vm-1", 0)
+	waitHandoff(t, handoff, "Handoff did not return once the STARTING slot ended")
+	r.wantReleased(1)
+}
