@@ -23,6 +23,7 @@ const (
 	completionGrace = 2 * time.Minute
 	backoffBase     = 5 * time.Second
 	occupiedBackoff = 30 * time.Second
+	probeInterval   = 30 * time.Second
 	breakerLimit    = 5
 	reapTimeout     = 30 * time.Second
 	diagTimeout     = 10 * time.Second
@@ -46,11 +47,11 @@ type Runner interface {
 	// It returns ErrLost when the process cannot be reached any more, and
 	// another error when the runner could not be started.
 	Run(ctx context.Context, inst fleet.Instance, name string, hooks Hooks) (int, error)
-	// Diag returns the tail of the runner's diagnostic log on inst.
 	// Attach follows a runner an earlier daemon run started on inst, from the
 	// start of its log, and returns as Run does. A runner that was never
 	// started is an error.
 	Attach(ctx context.Context, inst fleet.Instance, name string, hooks Hooks) (int, error)
+	// Diag returns the tail of the runner's diagnostic log on inst.
 	Diag(ctx context.Context, inst fleet.Instance) string
 }
 
@@ -66,15 +67,15 @@ type Registry interface {
 }
 
 type Config struct {
-	MaxInstances int
-	// Run prefixes the keys of the slots this run spawns, so they never equal
-	// a restored acquisition's. Empty means a random value.
-	Run                    string
+	MaxInstances           int
 	ListenTimeout          time.Duration
 	IdleTimeout            time.Duration
 	InstanceAcquireTimeout time.Duration
 	Logger                 hclog.Logger
 	Now                    func() time.Time
+	// Run prefixes the keys of the slots this run spawns, so they never equal
+	// a restored acquisition's. Empty means a random value.
+	Run string
 }
 
 // Scaler implements listener.Scaler. One slot holds one VM for one job.
@@ -82,7 +83,6 @@ type Scaler struct {
 	cfg      Config
 	client   Acquirer
 	registry Registry
-	runID    string
 	fleet    fleet.Fleet
 	runner   Runner
 	log      hclog.Logger
@@ -120,7 +120,6 @@ func New(cfg Config, client Acquirer, registry Registry, fl fleet.Fleet, runner 
 	}
 	return &Scaler{
 		cfg:      cfg,
-		runID:    cfg.Run,
 		client:   client,
 		registry: registry,
 		fleet:    fl,
@@ -292,7 +291,7 @@ func (s *Scaler) evaluate() {
 			}
 		case Busy:
 			s.settle(sl, now)
-			if sl.state == Busy && sl.lost {
+			if sl.state == Busy && sl.lost && !now.Before(sl.probeAt) {
 				s.toReaping(sl)
 			}
 		}
@@ -347,7 +346,7 @@ func (s *Scaler) cancelNewest(n int) {
 func (s *Scaler) spawn(now time.Time) {
 	s.seq++
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := &slot{key: fmt.Sprintf("%s-%d", s.runID, s.seq), seq: s.seq, since: now, cancel: cancel}
+	sl := &slot{key: fmt.Sprintf("%s-%d", s.cfg.Run, s.seq), seq: s.seq, since: now, cancel: cancel}
 	s.slots[sl.key] = sl
 	s.prune()
 	s.wg.Add(1)
@@ -508,8 +507,8 @@ func (s *Scaler) attach(ctx context.Context, sl *slot) {
 
 // attached records how the followed runner ended. It never ends the slot: the
 // runner's exit says nothing about its job, so GitHub's answer does. A runner
-// that is gone is treated as lost, which asks GitHub again on every poll until
-// the job is over.
+// that is gone is treated as lost, which asks GitHub again every probeInterval
+// until the job is over.
 func (s *Scaler) attached(sl *slot, code int, err error) {
 	if sl.state.Terminal() {
 		return
@@ -579,7 +578,8 @@ func (s *Scaler) find(name string) *slot {
 
 // settle ends a BUSY slot once the runner and GitHub both report the job over,
 // or the grace after the first report runs out. A lost runner never times out:
-// only GitHub can say its job is over, so evaluate asks again on every poll.
+// only GitHub can say its job is over, so evaluate asks again every
+// probeInterval.
 func (s *Scaler) settle(sl *slot, now time.Time) {
 	over := sl.completed && (sl.exited || sl.lost)
 	if !over && !sl.firstEnd.IsZero() && now.Sub(sl.firstEnd) >= completionGrace {
@@ -621,6 +621,7 @@ func (s *Scaler) reap(sl *slot) {
 		case err == nil || errors.Is(err, scaleset.RunnerNotFoundError):
 			s.terminate(sl, Done)
 		case errors.Is(err, scaleset.JobStillRunningError):
+			sl.probeAt = s.now().Add(probeInterval)
 			s.move(sl, Busy)
 		default:
 			s.log.Warn("removing runner failed, retrying next poll", "runner", sl.name, "error", err)

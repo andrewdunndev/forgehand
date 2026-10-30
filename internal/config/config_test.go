@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -240,6 +241,31 @@ func TestParseRejectsURLForms(t *testing.T) {
 			_, err := Parse([]byte(strings.Replace(valid, "https://github.com/owner/repo", u, 1)))
 			if err == nil || !strings.Contains(err.Error(), want) {
 				t.Errorf("err = %v, want it to contain %q", err, want)
+			}
+		})
+	}
+}
+
+func TestParseAcceptsStaticCredentials(t *testing.T) {
+	cfg, err := Parse([]byte(strings.Replace(valid, `username = "runner"`, "use_static_credentials = true\n    username = \"runner\"", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := cfg.ScaleSets[0].Autoscaler.ConnectorConfig
+	if !c.UseStaticCredentials || c.KeyPath != "/run/credentials/guest-ssh" || c.Username != "runner" {
+		t.Errorf("connector_config = %+v", c)
+	}
+}
+
+func TestParseAcceptsNamesWithDots(t *testing.T) {
+	for _, name := range []string{"ci.linux", "a..b", ".hidden", "trailing."} {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := Parse([]byte(strings.Replace(valid, `name = "example"`, fmt.Sprintf("name = %q", name), 1)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if cfg.ScaleSets[0].Name != name {
+				t.Errorf("name = %q", cfg.ScaleSets[0].Name)
 			}
 		})
 	}

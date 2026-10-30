@@ -55,4 +55,6 @@ type slot struct {
 	lost      bool
 
 	firstEnd time.Time
+	// probeAt is the earliest a lost BUSY slot asks GitHub about its job again.
+	probeAt time.Time
 }

@@ -12,7 +12,8 @@ listen_address = "127.0.0.1:9253"
 shutdown_timeout = 30
 
 [[scalesets]]
-# required: the scale set name. Created on GitHub at the first run.
+# required: the scale set name. Created on GitHub at the first run. One path
+# segment: not "." or "..", with no "/" or "\" and no control characters.
 name = "example"
 # required: the repository the GitHub App is installed on, as
 # https://github.com/<owner>/<repo> (no trailing slash or .git).

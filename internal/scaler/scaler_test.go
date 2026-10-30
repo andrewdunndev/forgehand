@@ -1096,6 +1096,7 @@ func TestAdoptedBusyRunnerThatExitedWaitsForJobCompleted(t *testing.T) {
 		defer r.s.mu.Unlock()
 		return r.s.find("vm-1").exited
 	})
+	r.settledAdopting("vm-1")
 	if got := r.stateOfRunner("vm-1"); got != Adopting {
 		t.Fatalf("slot is %s, want ADOPTING while RemoveRunner fails", got)
 	}
@@ -1404,8 +1405,8 @@ func TestStoppedScalerAdoptsNothing(t *testing.T) {
 }
 
 // An adopted runner that exited or never started cannot say when its job is
-// over, so GitHub is asked again on every poll: a JobCompleted consumed before
-// the restart must not strand the VM.
+// over, so GitHub is asked again every probe interval: a JobCompleted consumed
+// before the restart must not strand the VM.
 func TestAdoptedBusyRunnerThatEndedIsReapedOnceGitHubForgetsIt(t *testing.T) {
 	cases := map[string]result{
 		"exited":        {code: 0},
@@ -1458,5 +1459,84 @@ func TestDrainReturnsWhenTheRestoreEndsWithNothingToAdopt(t *testing.T) {
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("Drain did not return after the restore ended with nothing to adopt")
+	}
+}
+
+func (r *rig) removes() int {
+	n := 0
+	for _, e := range r.log.list() {
+		if e == "remove" {
+			n++
+		}
+	}
+	return n
+}
+
+// A BUSY slot whose runner is gone is asked about at GitHub no more often than
+// 30 s, not on every tick.
+func TestLostBusyRunnerAsksGitHubOncePerProbeInterval(t *testing.T) {
+	lost := map[string]func(r *rig){
+		"lost": func(r *rig) {
+			r.assigned(1)
+			r.busy("vm-1")
+			r.api.SetRemoveErr(scaleset.JobStillRunningError)
+			r.rn.get("vm-1").exit <- result{err: ErrLost}
+		},
+		"adopted and exited": func(r *rig) {
+			r.api.SetRemoveErr(scaleset.JobStillRunningError)
+			r.restore("old-1", "vm-1")
+			r.wantState("vm-1", Busy)
+			r.follow("vm-1", result{})
+		},
+	}
+	for name, setup := range lost {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t)
+			setup(r)
+			r.waitFor("the loss to be probed", func() bool {
+				r.s.mu.Lock()
+				defer r.s.mu.Unlock()
+				sl := r.s.find("vm-1")
+				return sl.lost && sl.state == Busy && !sl.reaping
+			})
+			for round := 1; round <= 2; round++ {
+				before := r.removes()
+				for range 29 {
+					r.advance(time.Second)
+					r.settledAdopting("vm-1")
+				}
+				if got := r.removes(); got != before {
+					t.Fatalf("round %d: %d probes before the interval ran out", round, got-before)
+				}
+				r.advance(time.Second)
+				r.waitFor("a probe once the interval ran out", func() bool { return r.removes() == before+1 })
+				r.settledAdopting("vm-1")
+				if got := r.stateOfRunner("vm-1"); got != Busy {
+					t.Fatalf("round %d: slot is %s, want BUSY while the job runs", round, got)
+				}
+			}
+		})
+	}
+}
+
+func TestRepeatedRestoredKeyAdoptsOnlyTheFirst(t *testing.T) {
+	r := newRig(t)
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
+	if _, err := r.api.GenerateJitRunnerConfig(context.Background(), "vm-1", 1); err != nil {
+		t.Fatal(err)
+	}
+	r.fl.Restore("old-1", &fleet.FakeInstance{ID: "vm-1"})
+	r.fl.Restore("old-1", &fleet.FakeInstance{ID: "vm-2"})
+	r.scale(nil)
+	r.waitFor("a follower on vm-1", func() bool { return r.rn.follower("vm-1") != nil })
+	r.waitFor("the repeat to be logged", func() bool {
+		return strings.Contains(r.logged(), "ignoring a repeated restored acquisition")
+	})
+	r.wantState("vm-1", Busy)
+	if r.rn.follower("vm-2") != nil {
+		t.Fatal("the repeated key started a second follower")
+	}
+	if n := r.live(); n != 1 {
+		t.Fatalf("live = %d, want the one adopted slot", n)
 	}
 }

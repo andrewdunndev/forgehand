@@ -43,11 +43,16 @@ configuration schema is still changing.
     generates the key pair itself. Set `use_static_credentials = true` with
     `key_path` (read at start; the example unit loads it as a systemd
     credential) to survive a daemon restart: the image must trust the matching
-    public key, because nothing is seeded, and a scale set name becomes its
-    state directory, so it must be one path segment
+    public key, because nothing is seeded
   - `autoscaler.instance_ready_command` gates readiness: a VM takes a job only
     after it exits 0 over SSH, and the connection retries until `connector_config.timeout`.
     Set it (`true` suffices) unless the image brings SSH up before the plugin reports an address
+
+## Scale set names
+
+Every scale set name must be one path segment: not `.` or `..`, with no `/` or
+`\` and no control characters. With static credentials the name is also the
+scale set's state directory.
 
 ## Install
 
@@ -102,6 +107,8 @@ With `use_static_credentials = true`, forgehand keeps its autoscaler state in
 
 - A VM whose runner is running a job keeps running; the new process follows
   the runner and holds the VM until GitHub reports the job complete.
+  A runner that has already exited leaves the VM held the same way, and GitHub
+  is asked about it every 30 seconds.
 - A VM whose runner is idle or has not taken its job is deleted, and its
   runner is removed. GitHub offers a job assigned to it again to a new VM.
 - A VM held warm by `idle_count` stays.

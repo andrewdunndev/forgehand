@@ -281,6 +281,27 @@ func TestRestoreCeilingEndsTheWait(t *testing.T) {
 	}
 }
 
+func TestRestoreCeilingDefaultsToThreeMinutesAndFollowsTheOption(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		set  time.Duration
+		want time.Duration
+	}{
+		{"default", 0, 3 * time.Minute},
+		{"option", 7 * time.Minute, 7 * time.Minute},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			before := time.Now()
+			f := newFleet(t, &dummy.InstanceGroup{MaxSize: 4}, Options{StateDir: t.TempDir(), RestoreCeiling: c.set})
+			after := time.Now()
+			deadline := f.(*fleetImpl).restore.deadline
+			if deadline.Before(before.Add(c.want)) || deadline.After(after.Add(c.want)) {
+				t.Fatalf("deadline %v after start is outside [%v, %v]", deadline.Sub(before), c.want, c.want+after.Sub(before))
+			}
+		})
+	}
+}
+
 func TestRestoreWithNoFilesIsOverAtOnce(t *testing.T) {
 	store, err := storage.NewFileStorage(t.TempDir())
 	if err != nil {

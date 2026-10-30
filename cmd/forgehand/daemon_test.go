@@ -593,9 +593,16 @@ func TestStaticCredentialsNeedStateDirectoryToRunNotToCheck(t *testing.T) {
 	cfg := testConfig(5)
 	static(&cfg.ScaleSets[0])
 	r := newRig(t, cfg)
-	err := r.d.run(context.Background(), r.sigs)
-	if err == nil || !strings.Contains(err.Error(), "STATE_DIRECTORY") {
-		t.Errorf("run err = %v, want it to name STATE_DIRECTORY", err)
+	r.start()
+	select {
+	case err := <-r.done:
+		if err == nil || !strings.Contains(err.Error(), "STATE_DIRECTORY") {
+			t.Errorf("run err = %v, want it to name STATE_DIRECTORY", err)
+		}
+	case <-time.After(2 * time.Second):
+		r.sigs <- syscall.SIGTERM
+		<-r.done
+		t.Fatal("run started without STATE_DIRECTORY")
 	}
 	if started, _ := r.fleetOptions(); started != 0 {
 		t.Errorf("fleet started %d times, want 0", started)
