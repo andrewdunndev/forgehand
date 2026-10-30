@@ -71,7 +71,7 @@ func (g *poolGuard) apply() {
 	g.mu.Lock()
 	ts, n := g.ts, len(g.pending)
 	g.mu.Unlock()
-	if ts == nil || len(g.base) == 0 {
+	if ts == nil {
 		return
 	}
 	// The only error is a shutdown under way, which needs no schedule.
