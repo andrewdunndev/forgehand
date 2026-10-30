@@ -72,6 +72,11 @@ func (g *guest) Run(ctx context.Context, _ fleet.Instance, name string, h scaler
 
 func (g *guest) Diag(context.Context, fleet.Instance) string { return "" }
 
+func (g *guest) Attach(ctx context.Context, _ fleet.Instance, _ string, _ scaler.Hooks) (int, error) {
+	<-ctx.Done()
+	return 0, ctx.Err()
+}
+
 func (g *guest) get(name string) *guestRun {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -602,4 +607,30 @@ func TestStaticCredentialsNeedStateDirectoryToRunNotToCheck(t *testing.T) {
 	r.wait("fleet start", func() bool { n, _ := r.fleetOptions(); return n == 1 })
 	r.sigs <- syscall.SIGTERM
 	<-r.done
+}
+
+func TestStorageIsPerScaleSetAndOnlyForStaticCredentials(t *testing.T) {
+	for _, tt := range []struct {
+		name   string
+		static bool
+		want   string
+	}{
+		{"static credentials", true, "state/example"},
+		{"generated credentials", false, ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("STATE_DIRECTORY", "state")
+			cfg := testConfig(5)
+			cfg.ScaleSets[0].Autoscaler.ConnectorConfig.UseStaticCredentials = tt.static
+			r := newRig(t, cfg)
+			r.start()
+			r.wait("fleet start", func() bool { n, _ := r.fleetOptions(); return n == 1 })
+			_, opts := r.fleetOptions()
+			if opts.StateDir != tt.want {
+				t.Errorf("StateDir = %q, want %q", opts.StateDir, tt.want)
+			}
+			r.sigs <- syscall.SIGTERM
+			<-r.done
+		})
+	}
 }

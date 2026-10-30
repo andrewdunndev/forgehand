@@ -15,13 +15,14 @@ const (
 	Starting
 	Listening
 	Reaping
+	Adopting
 	Busy
 	Cancelled
 	Failed
 	Done
 )
 
-var stateNames = [...]string{"ACQUIRING", "STARTING", "LISTENING", "REAPING", "BUSY", "CANCELLED", "FAILED", "DONE"}
+var stateNames = [...]string{"ACQUIRING", "STARTING", "LISTENING", "REAPING", "ADOPTING", "BUSY", "CANCELLED", "FAILED", "DONE"}
 
 func (s State) String() string { return stateNames[s] }
 
@@ -33,6 +34,7 @@ var allowed = map[State][]State{
 	Starting:  {Listening, Cancelled, Failed},
 	Listening: {Busy, Reaping, Cancelled, Failed},
 	Reaping:   {Busy, Cancelled, Done},
+	Adopting:  {Busy, Reaping, Cancelled, Done},
 	Busy:      {Reaping, Cancelled, Done},
 }
 

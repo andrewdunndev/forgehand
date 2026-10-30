@@ -4,6 +4,8 @@ package scaler
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"slices"
@@ -45,6 +47,10 @@ type Runner interface {
 	// another error when the runner could not be started.
 	Run(ctx context.Context, inst fleet.Instance, name string, hooks Hooks) (int, error)
 	// Diag returns the tail of the runner's diagnostic log on inst.
+	// Attach follows a runner an earlier daemon run started on inst, from the
+	// start of its log, and returns as Run does. A runner that was never
+	// started is an error.
+	Attach(ctx context.Context, inst fleet.Instance, name string, hooks Hooks) (int, error)
 	Diag(ctx context.Context, inst fleet.Instance) string
 }
 
@@ -60,7 +66,10 @@ type Registry interface {
 }
 
 type Config struct {
-	MaxInstances           int
+	MaxInstances int
+	// Run prefixes the keys of the slots this run spawns, so they never equal
+	// a restored acquisition's. Empty means a random value.
+	Run                    string
 	ListenTimeout          time.Duration
 	IdleTimeout            time.Duration
 	InstanceAcquireTimeout time.Duration
@@ -73,6 +82,7 @@ type Scaler struct {
 	cfg      Config
 	client   Acquirer
 	registry Registry
+	runID    string
 	fleet    fleet.Fleet
 	runner   Runner
 	log      hclog.Logger
@@ -87,6 +97,7 @@ type Scaler struct {
 	failures  int
 	nextSpawn time.Time
 	fatal     error
+	restoring bool
 	draining  bool
 	stopped   bool
 	drained   chan struct{}
@@ -102,8 +113,14 @@ func New(cfg Config, client Acquirer, registry Registry, fl fleet.Fleet, runner 
 	if now == nil {
 		now = time.Now
 	}
+	if cfg.Run == "" {
+		var b [4]byte
+		_, _ = rand.Read(b[:])
+		cfg.Run = hex.EncodeToString(b[:])
+	}
 	return &Scaler{
 		cfg:      cfg,
+		runID:    cfg.Run,
 		client:   client,
 		registry: registry,
 		fleet:    fl,
@@ -157,7 +174,7 @@ func (s *Scaler) Scale(ctx context.Context, msg *scaleset.RunnerScaleSetMessage)
 		}
 	}
 	for _, sl := range s.slots {
-		if sl.state == Reaping {
+		if sl.state == Reaping || sl.state == Adopting {
 			s.reap(sl)
 		}
 	}
@@ -191,6 +208,7 @@ func (s *Scaler) Run(ctx context.Context) error {
 func (s *Scaler) Drain(ctx context.Context) error {
 	s.mu.Lock()
 	s.draining = true
+	s.adoptRestored()
 	for _, sl := range s.slots {
 		switch sl.state {
 		case Acquiring:
@@ -219,7 +237,7 @@ func (s *Scaler) Stop(ctx context.Context) error {
 	var registered []string
 	for _, sl := range s.slots {
 		switch sl.state {
-		case Starting, Listening, Reaping:
+		case Starting, Listening, Reaping, Adopting:
 			registered = append(registered, sl.name)
 		}
 		s.terminate(sl, Cancelled)
@@ -253,6 +271,9 @@ func (s *Scaler) Stop(ctx context.Context) error {
 
 func (s *Scaler) evaluate() {
 	now := s.now()
+	if !s.stopped {
+		s.adoptRestored()
+	}
 	for _, sl := range s.slots {
 		switch sl.state {
 		case Acquiring:
@@ -292,7 +313,7 @@ func (s *Scaler) evaluate() {
 	} else {
 		s.overSince = time.Time{}
 	}
-	if s.fatal == nil && !now.Before(s.nextSpawn) {
+	if s.fatal == nil && !s.restoring && !now.Before(s.nextSpawn) {
 		for ; live < target; live++ {
 			s.spawn(now)
 		}
@@ -326,7 +347,7 @@ func (s *Scaler) cancelNewest(n int) {
 func (s *Scaler) spawn(now time.Time) {
 	s.seq++
 	ctx, cancel := context.WithCancel(context.Background())
-	sl := &slot{key: fmt.Sprintf("slot-%d", s.seq), seq: s.seq, since: now, cancel: cancel}
+	sl := &slot{key: fmt.Sprintf("%s-%d", s.runID, s.seq), seq: s.seq, since: now, cancel: cancel}
 	s.slots[sl.key] = sl
 	s.prune()
 	s.wg.Add(1)
@@ -372,15 +393,18 @@ func (s *Scaler) run(ctx context.Context, sl *slot) {
 	s.move(sl, Starting)
 	s.mu.Unlock()
 
-	hooks := Hooks{
-		Listening:  func() { s.locked(func() { s.listening(sl) }) },
-		RunningJob: func() { s.locked(func() { s.running(sl) }) },
-	}
-	code, err := s.runner.Run(ctx, inst, sl.name, hooks)
+	code, err := s.runner.Run(ctx, inst, sl.name, s.hooks(sl))
 	s.locked(func() {
 		s.exited(sl, code, err)
 		s.evaluate()
 	})
+}
+
+func (s *Scaler) hooks(sl *slot) Hooks {
+	return Hooks{
+		Listening:  func() { s.locked(func() { s.listening(sl) }) },
+		RunningJob: func() { s.locked(func() { s.running(sl) }) },
+	}
 }
 
 func (s *Scaler) locked(f func()) {
@@ -435,6 +459,75 @@ func (s *Scaler) exited(sl *slot, code int, err error) {
 		s.fail(sl, "runner exited before it was listening: "+exitCause(code))
 	case Listening:
 		s.fail(sl, "runner exited while idle: "+exitCause(code))
+	}
+}
+
+// adoptRestored takes the acquisitions the fleet restored from an earlier run
+// and gives each an ADOPTING slot, and notes whether the restore is under way:
+// nothing spawns, and a drain does not settle, until it is over.
+func (s *Scaler) adoptRestored() {
+	adopted, restoring := s.fleet.Restored()
+	for _, a := range adopted {
+		s.adopt(a)
+	}
+	was := s.restoring
+	s.restoring = restoring
+	if was && !restoring {
+		s.log.Info("restore finished")
+		s.settled()
+	}
+}
+
+// adopt starts following a restored acquisition. Its runner may be idle,
+// running a job, or gone, which only GitHub can tell: RemoveRunner refuses to
+// remove one that runs a job. The runner is followed from the start of its log
+// meanwhile.
+func (s *Scaler) adopt(a fleet.Adopted) {
+	if _, dup := s.slots[a.Key]; dup {
+		s.log.Warn("ignoring a repeated restored acquisition", "slot", a.Key)
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	sl := &slot{key: a.Key, name: a.Instance.InstanceID(), state: Adopting, since: s.now(), cancel: cancel, inst: a.Instance, acquired: true}
+	s.slots[sl.key] = sl
+	s.prune()
+	s.log.Info("adopting a restored instance", "slot", sl.key, "runner", sl.name)
+	s.wg.Add(1)
+	go s.attach(ctx, sl)
+	s.reap(sl)
+}
+
+func (s *Scaler) attach(ctx context.Context, sl *slot) {
+	defer s.wg.Done()
+	code, err := s.runner.Attach(ctx, sl.inst, sl.name, s.hooks(sl))
+	s.locked(func() {
+		s.attached(sl, code, err)
+		s.evaluate()
+	})
+}
+
+// attached records how the followed runner ended. It never ends the slot: the
+// runner's exit says nothing about its job, so GitHub's answer does. A runner
+// that is gone is treated as lost, which asks GitHub again on every poll until
+// the job is over.
+func (s *Scaler) attached(sl *slot, code int, err error) {
+	if sl.state.Terminal() {
+		return
+	}
+	switch {
+	case errors.Is(err, ErrLost):
+		s.log.Warn("adopted runner lost", "slot", sl.key, "name", sl.name, "error", err)
+		sl.lost = true
+		if sl.state == Adopting || sl.state == Busy {
+			s.toReaping(sl)
+		}
+	case err != nil:
+		s.log.Warn("adopted runner not running", "slot", sl.key, "name", sl.name, "error", err)
+		sl.lost = true
+	default:
+		s.log.Info("adopted runner exited", "slot", sl.key, "name", sl.name, "cause", exitCause(code))
+		sl.exited = true
+		sl.lost = true
 	}
 }
 
@@ -521,7 +614,7 @@ func (s *Scaler) reap(sl *slot) {
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		sl.reaping = false
-		if sl.state != Reaping {
+		if sl.state != Reaping && sl.state != Adopting {
 			return
 		}
 		switch {
@@ -590,7 +683,7 @@ func (s *Scaler) terminate(sl *slot, to State) bool {
 }
 
 func (s *Scaler) settled() {
-	if !s.draining || s.live() > 0 {
+	if !s.draining || s.restoring || s.live() > 0 {
 		return
 	}
 	select {

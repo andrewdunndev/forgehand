@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"testing"
@@ -88,6 +89,8 @@ type fakeRunner struct {
 	api  *github.Fake
 	mu   sync.Mutex
 	runs map[string]*run
+	// attached holds the runs that followed an adopted runner.
+	attached map[string]*run
 
 	diag       string
 	diagCalls  int
@@ -111,6 +114,20 @@ func (f *fakeRunner) Run(ctx context.Context, _ fleet.Instance, name string, h H
 	}
 }
 
+// Attach waits for the test to drive the adopted runner, as Run does.
+func (f *fakeRunner) Attach(ctx context.Context, _ fleet.Instance, name string, h Hooks) (int, error) {
+	r := &run{hooks: h, exit: make(chan result, 1)}
+	f.mu.Lock()
+	f.attached[name] = r
+	f.mu.Unlock()
+	select {
+	case res := <-r.exit:
+		return res.code, res.err
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
+}
+
 func (f *fakeRunner) Diag(context.Context, fleet.Instance) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -123,6 +140,12 @@ func (f *fakeRunner) get(name string) *run {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.runs[name]
+}
+
+func (f *fakeRunner) follower(name string) *run {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.attached[name]
 }
 
 type rig struct {
@@ -143,10 +166,11 @@ func newRig(t *testing.T) *rig {
 	fl := fleet.NewFake(fleet.Options{})
 	log := &eventLog{}
 	out := &syncWriter{}
-	rn := &fakeRunner{api: api, runs: map[string]*run{}, fl: fl}
+	rn := &fakeRunner{api: api, runs: map[string]*run{}, attached: map[string]*run{}, fl: fl}
 	clk := &clock{t: time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)}
 	s := New(Config{
 		MaxInstances:           2,
+		Run:                    "slot",
 		ListenTimeout:          3 * time.Minute,
 		IdleTimeout:            5 * time.Minute,
 		InstanceAcquireTimeout: 15 * time.Minute,
@@ -993,5 +1017,388 @@ func TestNonConflictJitErrorStillCountsTowardBreaker(t *testing.T) {
 	defer r.s.mu.Unlock()
 	if r.s.failures != 1 {
 		t.Fatalf("failures = %d, want 1", r.s.failures)
+	}
+}
+
+// restore reports an acquisition from an earlier run for the instance name,
+// with its runner registered at GitHub, and applies a poll so the scaler
+// adopts it.
+func (r *rig) restore(key, name string) {
+	r.t.Helper()
+	if _, err := r.api.GenerateJitRunnerConfig(context.Background(), name, 1); err != nil {
+		r.t.Fatal(err)
+	}
+	r.restoreUnregistered(key, name)
+}
+
+func (r *rig) restoreUnregistered(key, name string) {
+	r.t.Helper()
+	r.fl.Restore(key, &fleet.FakeInstance{ID: name})
+	r.scale(nil)
+	r.waitFor("a follower on "+name, func() bool { return r.rn.follower(name) != nil })
+}
+
+func (r *rig) follow(name string, res result) { r.rn.follower(name).exit <- res }
+
+// settledAdopting waits until no classification attempt is in flight.
+func (r *rig) settledAdopting(name string) {
+	r.t.Helper()
+	r.waitFor(name+" to be idle", func() bool {
+		r.s.mu.Lock()
+		defer r.s.mu.Unlock()
+		return !r.s.find(name).reaping
+	})
+}
+
+func TestAdoptedIdleRunnerIsRemovedAndItsVMReleased(t *testing.T) {
+	r := newRig(t)
+	r.restore("old-1", "vm-1")
+	r.wantState("vm-1", Done)
+	r.wantReleased(1)
+	if got := fmt.Sprint(r.log.list()); got != "[remove release]" {
+		t.Fatalf("order = %s, want remove then release", got)
+	}
+	if got := r.fl.Released()[0]; got != "old-1" {
+		t.Fatalf("released %q, want the restored key", got)
+	}
+}
+
+func TestAdoptedRunnerGitHubDoesNotKnowIsDone(t *testing.T) {
+	r := newRig(t)
+	r.restoreUnregistered("old-1", "vm-1")
+	r.wantState("vm-1", Done)
+	r.wantReleased(1)
+}
+
+func TestAdoptedRunnerWithAJobIsBusyUntilJobCompleted(t *testing.T) {
+	r := newRig(t)
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
+	r.restore("old-1", "vm-1")
+	r.wantState("vm-1", Busy)
+	r.advance(time.Hour)
+	if n := len(r.fl.Released()); n != 0 {
+		t.Fatalf("released %d times while the job runs", n)
+	}
+
+	r.scale(completed("vm-1"))
+	r.follow("vm-1", result{})
+	r.wantState("vm-1", Done)
+	r.wantReleased(1)
+}
+
+func TestAdoptedBusyRunnerThatExitedWaitsForJobCompleted(t *testing.T) {
+	r := newRig(t)
+	r.api.SetRemoveErr(errors.New("502"))
+	r.restore("old-1", "vm-1")
+	r.follow("vm-1", result{code: 0})
+	r.waitFor("the exit to be seen", func() bool {
+		r.s.mu.Lock()
+		defer r.s.mu.Unlock()
+		return r.s.find("vm-1").exited
+	})
+	if got := r.stateOfRunner("vm-1"); got != Adopting {
+		t.Fatalf("slot is %s, want ADOPTING while RemoveRunner fails", got)
+	}
+
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
+	r.scale(nil)
+	r.wantState("vm-1", Busy)
+	r.advance(time.Hour)
+	r.settledAdopting("vm-1")
+	if got := r.stateOfRunner("vm-1"); got != Busy {
+		t.Fatalf("slot is %s after the grace, want BUSY until JobCompleted", got)
+	}
+	if n := len(r.fl.Released()); n != 0 {
+		t.Fatalf("released %d times while the job runs", n)
+	}
+
+	r.scale(completed("vm-1"))
+	r.wantState("vm-1", Done)
+	r.wantReleased(1)
+}
+
+func TestAdoptedRunnerNeverStartedIsDoneUnlessItHasAJob(t *testing.T) {
+	never := result{err: errors.New("the runner was never started in the guest")}
+	t.Run("no job", func(t *testing.T) {
+		r := newRig(t)
+		r.api.SetRemoveErr(errors.New("502"))
+		r.restore("old-1", "vm-1")
+		r.follow("vm-1", never)
+		r.api.SetRemoveErr(nil)
+		r.scale(nil)
+		r.wantState("vm-1", Done)
+		r.wantReleased(1)
+	})
+	t.Run("job running", func(t *testing.T) {
+		r := newRig(t)
+		r.api.SetRemoveErr(scaleset.JobStillRunningError)
+		r.restore("old-1", "vm-1")
+		r.follow("vm-1", never)
+		r.wantState("vm-1", Busy)
+		r.advance(time.Hour)
+		r.settledAdopting("vm-1")
+		if n := len(r.fl.Released()); n != 0 {
+			t.Fatalf("released %d times while the job runs", n)
+		}
+	})
+}
+
+func TestAdoptedRemoveRunnerErrorRetriesOnTheNextPoll(t *testing.T) {
+	r := newRig(t)
+	r.api.SetRemoveErr(errors.New("502"))
+	r.restore("old-1", "vm-1")
+	r.waitFor("a failed attempt", func() bool {
+		return strings.Contains(r.logged(), "retrying next poll")
+	})
+	r.settledAdopting("vm-1")
+	if got := r.stateOfRunner("vm-1"); got != Adopting {
+		t.Fatalf("slot is %s, want ADOPTING", got)
+	}
+	if n := len(r.fl.Released()); n != 0 {
+		t.Fatalf("released %d times after a failed removal", n)
+	}
+	r.api.SetRemoveErr(nil)
+	r.scale(nil)
+	r.wantState("vm-1", Done)
+	r.wantReleased(1)
+}
+
+func TestAdoptedRunnerUnreachableIsReaped(t *testing.T) {
+	r := newRig(t)
+	r.api.SetRemoveErr(errors.New("502"))
+	r.restore("old-1", "vm-1")
+	r.settledAdopting("vm-1")
+	r.follow("vm-1", result{err: fmt.Errorf("%w: guest unreachable", ErrLost)})
+	r.wantState("vm-1", Reaping)
+
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
+	r.scale(nil)
+	r.wantState("vm-1", Busy)
+	r.api.SetRemoveErr(scaleset.RunnerNotFoundError)
+	r.advance(time.Minute)
+	r.wantState("vm-1", Done)
+	r.wantReleased(1)
+}
+
+func TestAdoptedSlotsCountAsLiveAndSpawnNothing(t *testing.T) {
+	r := newRig(t)
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
+	r.restore("old-1", "vm-1")
+	r.wantState("vm-1", Busy)
+	r.assigned(1)
+	r.advance(time.Minute)
+	if got := r.live(); got != 1 {
+		t.Fatalf("live = %d, want the adopted slot only", got)
+	}
+	if got := r.slotCount(); got != 0 {
+		t.Fatalf("spawned %d slots for a job the adopted runner holds", got)
+	}
+	if w := r.fl.Waiting(); len(w) != 0 {
+		t.Fatalf("blocked Acquires = %v", w)
+	}
+}
+
+func TestNothingSpawnsUntilTheRestoreIsOver(t *testing.T) {
+	r := newRig(t)
+	r.fl.SetRestoring(true)
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
+	r.assigned(2)
+	r.advance(time.Minute)
+	if got := r.slotCount(); got != 0 {
+		t.Fatalf("spawned %d slots during the restore", got)
+	}
+
+	r.restore("old-1", "vm-1")
+	r.wantState("vm-1", Busy)
+	r.fl.SetRestoring(false)
+	r.assigned(2)
+	r.waitFor("one blocked Acquire", func() bool { return len(r.fl.Waiting()) == 1 })
+	if got := r.slotCount(); got != 1 {
+		t.Fatalf("spawned %d slots, want one beside the adopted slot", got)
+	}
+}
+
+func TestSlotKeysNeverMeetARestoredKey(t *testing.T) {
+	spawn := func(restored string) string {
+		api := github.NewFake()
+		fl := fleet.NewFake(fleet.Options{})
+		s := New(Config{MaxInstances: 1, InstanceAcquireTimeout: time.Hour}, api.Session, api, fl, &fakeRunner{api: api, runs: map[string]*run{}, attached: map[string]*run{}, fl: fl})
+		t.Cleanup(func() { _ = s.Stop(context.Background()) })
+		if restored != "" {
+			fl.Restore(restored, &fleet.FakeInstance{ID: "vm-0"})
+		}
+		if err := s.Scale(context.Background(), &scaleset.RunnerScaleSetMessage{Statistics: stats(2)}); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(3 * time.Second)
+		for len(fl.Waiting()) == 0 {
+			if time.Now().After(deadline) {
+				t.Fatal("no Acquire")
+			}
+			time.Sleep(time.Millisecond)
+		}
+		return fl.Waiting()[0]
+	}
+	first, second := spawn(""), spawn("")
+	if first == second {
+		t.Fatalf("two runs minted the key %q", first)
+	}
+	if ok, _ := regexp.MatchString(`^[0-9a-f]{8}-1$`, first); !ok {
+		t.Fatalf("key %q is not <run>-<n> with an 8 hex digit run", first)
+	}
+	if got := spawn(first); got == first {
+		t.Fatalf("a new run minted the restored key %q", first)
+	}
+}
+
+func TestDrainWaitsForAdoptingSlotsToClassify(t *testing.T) {
+	r := newRig(t)
+	r.api.SetRemoveErr(errors.New("502"))
+	r.restore("old-1", "vm-1")
+	r.settledAdopting("vm-1")
+
+	drained := make(chan error, 1)
+	go func() { drained <- r.s.Drain(context.Background()) }()
+	select {
+	case <-drained:
+		t.Fatal("Drain returned with an ADOPTING slot")
+	case <-time.After(20 * time.Millisecond):
+	}
+	if got := r.stateOfRunner("vm-1"); got != Adopting {
+		t.Fatalf("slot is %s, want ADOPTING", got)
+	}
+
+	r.api.SetRemoveErr(nil)
+	r.scale(nil)
+	select {
+	case err := <-drained:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Drain did not return once the slot classified")
+	}
+	r.wantReleased(1)
+}
+
+func TestDrainWaitsForAdoptedBusyJob(t *testing.T) {
+	r := newRig(t)
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
+	r.restore("old-1", "vm-1")
+	r.wantState("vm-1", Busy)
+
+	drained := make(chan error, 1)
+	go func() { drained <- r.s.Drain(context.Background()) }()
+	select {
+	case <-drained:
+		t.Fatal("Drain returned with a BUSY adopted slot")
+	case <-time.After(20 * time.Millisecond):
+	}
+	r.scale(completed("vm-1"))
+	r.follow("vm-1", result{})
+	select {
+	case err := <-drained:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Drain did not return")
+	}
+	r.wantReleased(1)
+}
+
+func TestDrainWaitsForTheRestoreAndAdoptsWhatItFinds(t *testing.T) {
+	r := newRig(t)
+	r.fl.SetRestoring(true)
+	r.api.SetRemoveErr(scaleset.JobStillRunningError)
+
+	drained := make(chan error, 1)
+	go func() { drained <- r.s.Drain(context.Background()) }()
+	select {
+	case <-drained:
+		t.Fatal("Drain returned while the restore was under way")
+	case <-time.After(20 * time.Millisecond):
+	}
+
+	r.restore("old-1", "vm-1")
+	r.wantState("vm-1", Busy)
+	r.fl.SetRestoring(false)
+	r.advance(time.Second)
+	select {
+	case <-drained:
+		t.Fatal("Drain returned with the adopted job running")
+	case <-time.After(20 * time.Millisecond):
+	}
+	r.scale(completed("vm-1"))
+	r.follow("vm-1", result{})
+	select {
+	case err := <-drained:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Drain did not return")
+	}
+}
+
+func TestDrainWaitsForReapingSlots(t *testing.T) {
+	r := newRig(t)
+	r.assigned(1)
+	r.listening("vm-1")
+	r.api.SetRemoveErr(errors.New("502"))
+
+	drained := make(chan error, 1)
+	go func() { drained <- r.s.Drain(context.Background()) }()
+	r.wantState("vm-1", Reaping)
+	select {
+	case <-drained:
+		t.Fatal("Drain returned with a REAPING slot")
+	case <-time.After(20 * time.Millisecond):
+	}
+	r.api.SetRemoveErr(nil)
+	r.scale(nil)
+	select {
+	case err := <-drained:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Drain did not return once the runner was removed")
+	}
+}
+
+func TestStopCancelsAdoptedSlotsAndRemovesTheirRegistrations(t *testing.T) {
+	r := newRig(t)
+	r.api.SetRemoveErr(errors.New("502"))
+	r.restore("old-1", "vm-1")
+	r.settledAdopting("vm-1")
+	r.api.SetRemoveErr(nil)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := r.s.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.stateOfRunner("vm-1"); got != Cancelled {
+		t.Fatalf("slot is %s, want CANCELLED", got)
+	}
+	r.wantReleased(1)
+	if n := len(r.api.RemovedRunners()); n != 1 {
+		t.Fatalf("removed %d registrations, want 1", n)
+	}
+}
+
+func TestStoppedScalerAdoptsNothing(t *testing.T) {
+	r := newRig(t)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := r.s.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	r.fl.Restore("old-1", &fleet.FakeInstance{ID: "vm-1"})
+	r.scale(nil)
+	r.advance(time.Second)
+	if got := r.live(); got != 0 {
+		t.Fatalf("live = %d after Stop", got)
 	}
 }

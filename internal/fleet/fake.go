@@ -34,6 +34,9 @@ type Fake struct {
 	held     map[string]Instance
 	released []string
 	down     bool
+
+	restoring bool
+	adopted   []Adopted
 }
 
 var _ Fleet = (*Fake)(nil)
@@ -136,4 +139,28 @@ func (f *Fake) Leftover(id string) {
 	if f.opts.OnLeftover != nil {
 		f.opts.OnLeftover(id)
 	}
+}
+
+// SetRestoring makes Restored report a restore under way, or over.
+func (f *Fake) SetRestoring(restoring bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.restoring = restoring
+}
+
+// Restore queues an acquisition from an earlier run for the next Restored
+// call. The instance counts as held until it is released.
+func (f *Fake) Restore(key string, inst Instance) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.held[key] = inst
+	f.adopted = append(f.adopted, Adopted{Key: key, Instance: inst})
+}
+
+func (f *Fake) Restored() ([]Adopted, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := f.adopted
+	f.adopted = nil
+	return out, f.restoring
 }

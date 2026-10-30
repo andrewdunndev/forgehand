@@ -54,7 +54,9 @@ name_prefix = "forgehand-"
 protocol = "ssh"
 # the guest user. The plugin generates the SSH key pair itself. To use a key
 # the image already trusts instead, set use_static_credentials = true and
-# key_path = "/run/credentials/forgehand.service/guest-ssh".
+# key_path = "/run/credentials/forgehand.service/guest-ssh". Only then does a
+# restart adopt the VMs of running jobs; the state lives under the unit's
+# StateDirectory, in a directory named after the scale set.
 username = "runner"
 timeout = "10m"
 

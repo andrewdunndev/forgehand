@@ -92,6 +92,29 @@ cosign verify-blob forgehand-linux-amd64 --bundle forgehand-linux-amd64.bundle \
   daemon exits. `SIGTERM` or `SIGINT` during a drain ends it and stops within `shutdown_timeout`.
 - `SIGTERM` and `SIGINT` stop within `shutdown_timeout` seconds, running jobs
   included.
+- A crash (`SIGKILL`) leaves the VMs and their runners running; see Restart.
+
+## Restart
+
+With `use_static_credentials = true`, forgehand keeps its autoscaler state in
+`$STATE_DIRECTORY/<scale set name>` (the example unit sets
+`StateDirectory=forgehand`), and a restart adopts what an earlier run left:
+
+- A VM whose runner is running a job keeps running; the new process follows
+  the runner and holds the VM until GitHub reports the job complete.
+- A VM whose runner is idle or has not taken its job is deleted, and its
+  runner is removed. GitHub offers a job assigned to it again to a new VM.
+- A VM held warm by `idle_count` stays.
+- Nothing starts a new VM for a job until the restored VMs have been counted.
+  That wait ends at once when none are restorable, and after 3 minutes at most.
+
+The state files hold no JIT config, but they hold each VM's connection
+details, including the guest SSH private key. They are mode 0600 in a 0700
+directory, readable only by the service user and root.
+
+Without static credentials the plugin generates the guest key itself, and a
+restart cannot reach the VMs an earlier run left. They are deleted and their
+runners removed, and any job they ran is lost.
 
 ## Instance health
 

@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"gitlab.com/gitlab-org/fleeting/fleeting/provider"
 	"gitlab.com/gitlab-org/fleeting/taskscaler"
 	tsprometheus "gitlab.com/gitlab-org/fleeting/taskscaler/metrics/prometheus"
+	"gitlab.com/gitlab-org/fleeting/taskscaler/storage"
 
 	"gitlab.com/dunn.dev/forgehand/internal/config"
 )
@@ -35,6 +37,10 @@ type Fleet interface {
 	Acquire(ctx context.Context, key string) (Instance, error)
 	Release(key string)
 	Shutdown(ctx context.Context)
+	// Restored returns the acquisitions restored from an earlier run since the
+	// last call, and whether the restore is still under way. A fleet without
+	// storage restores nothing.
+	Restored() (adopted []Adopted, restoring bool)
 }
 
 type Options struct {
@@ -47,12 +53,19 @@ type Options struct {
 	// that was rejected and is being deleted, so its GitHub runner can be
 	// removed. It runs on its own goroutine.
 	OnLeftover func(id string)
+	// StateDir, when set, keeps taskscaler's state there so a restart adopts
+	// the instances and acquisitions of an earlier run.
+	StateDir string
+	// RestoreCeiling bounds how long Restored reports a restore under way.
+	// Zero means three minutes.
+	RestoreCeiling time.Duration
 }
 
 type fleetImpl struct {
-	ts     taskscaler.Taskscaler
-	cancel context.CancelFunc
-	kill   func()
+	ts      taskscaler.Taskscaler
+	cancel  context.CancelFunc
+	kill    func()
+	restore *restore
 }
 
 // LookPath resolves a plugin path, name or OCI reference to its binary.
@@ -98,8 +111,28 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 		return nil, err
 	}
 	group = removeOnHeartbeatFailure{InstanceGroup: group, log: opts.Logger}
+
+	log := opts.Logger
+	if log == nil {
+		log = hclog.NewNullLogger()
+	}
+	var rs *restore
+	var tsOpts []taskscaler.Option
+	if opts.StateDir != "" {
+		store, err := storage.NewFileStorage(opts.StateDir)
+		if err != nil {
+			return nil, fmt.Errorf("creating the state directory: %w", err)
+		}
+		ceiling := cmp.Or(opts.RestoreCeiling, restoreCeiling)
+		if rs, err = newRestore(store, log, ceiling); err != nil {
+			return nil, fmt.Errorf("reading the state directory: %w", err)
+		}
+		tsOpts = append(tsOpts, taskscaler.WithStorage(store))
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
-	tsOpts := append(mapped(cfg, settings, upFunc(ctx, cfg, opts.OnLeftover)), extra...)
+	tsOpts = append(tsOpts, mapped(cfg, settings, upFunc(ctx, cfg, opts.OnLeftover, rs))...)
+	tsOpts = append(tsOpts, extra...)
 	if opts.Logger != nil {
 		tsOpts = append(tsOpts, taskscaler.WithLogger(opts.Logger.Named("taskscaler")))
 	}
@@ -127,7 +160,7 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 		cancel()
 		return nil, fmt.Errorf("configuring taskscaler schedules: %w", err)
 	}
-	return &fleetImpl{ts: ts, cancel: cancel, kill: kill}, nil
+	return &fleetImpl{ts: ts, cancel: cancel, kill: kill, restore: rs}, nil
 }
 
 func (f *fleetImpl) Acquire(ctx context.Context, key string) (Instance, error) {
@@ -139,6 +172,13 @@ func (f *fleetImpl) Acquire(ctx context.Context, key string) (Instance, error) {
 }
 
 func (f *fleetImpl) Release(key string) { f.ts.Release(key) }
+
+func (f *fleetImpl) Restored() ([]Adopted, bool) {
+	if f.restore == nil {
+		return nil, false
+	}
+	return f.restore.take()
+}
 
 // Shutdown stops the autoscaler, which deletes the instances, then kills the
 // plugin process.
@@ -225,11 +265,21 @@ func settings(cfg config.Autoscaler) (provider.Settings, error) {
 }
 
 // upFunc runs when an instance is first running and before it can be acquired.
-// Only an instance this run requested is usable: one that existed at start or
-// appeared out of band carries an unknown runner and job, so it is rejected
-// and deleted.
-func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string)) taskscaler.UpFunc {
-	return func(_ taskscaler.Taskscaler, in taskscaler.UpFuncInstance) error {
+// An instance restored from storage is kept and its acquisitions are handed to
+// rs. Any other instance that existed at start or appeared out of band carries
+// an unknown runner and job, so it is rejected and deleted.
+func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string), rs *restore) taskscaler.UpFunc {
+	return func(ts taskscaler.Taskscaler, in taskscaler.UpFuncInstance) error {
+		if in.Restored && rs != nil {
+			var adopted []Adopted
+			for _, key := range in.Acquisitions {
+				if acq := ts.Get(key); acq != nil {
+					adopted = append(adopted, Adopted{Key: key, Instance: acq})
+				}
+			}
+			rs.up(in.ID, adopted)
+			return nil
+		}
 		if in.Cause == fleeting.CausePreexisted || in.Cause == fleeting.CauseUnexpected || len(in.Acquisitions) > 0 {
 			if onLeftover != nil {
 				go onLeftover(in.ID)

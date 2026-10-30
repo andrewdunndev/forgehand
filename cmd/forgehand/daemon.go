@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
@@ -135,12 +136,16 @@ func (d *daemon) start(ctx context.Context, cfg config.ScaleSet, metrics prometh
 		listened: make(chan struct{}),
 	}
 	sw := sweeper{reg: api, log: log, interval: d.sweepInterval, attempts: d.sweepAttempts}
-	u.fleet, err = d.deps.startFleet(cfg.Autoscaler, fleet.Options{
+	opts := fleet.Options{
 		Logger:     log,
 		Name:       cfg.Name,
 		Metrics:    metrics,
 		OnLeftover: func(id string) { sw.remove(ctx, id) },
-	})
+	}
+	if cfg.Autoscaler.ConnectorConfig.UseStaticCredentials {
+		opts.StateDir = filepath.Join(os.Getenv("STATE_DIRECTORY"), cfg.Name)
+	}
+	u.fleet, err = d.deps.startFleet(cfg.Autoscaler, opts)
 	if err != nil {
 		return nil, err
 	}

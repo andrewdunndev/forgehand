@@ -31,6 +31,7 @@ LoadCredential=app.pem:/etc/forgehand/app.pem
 DynamicUser=yes
 # The libvirt plugin needs the libvirt socket.
 #SupplementaryGroups=libvirt
+# Restart state for scale sets with use_static_credentials (STATE_DIRECTORY).
 StateDirectory=forgehand
 Environment=HOME=/var/lib/forgehand
 Environment=FLEETING_PLUGIN_PATH=/usr/local/lib/fleeting/plugins

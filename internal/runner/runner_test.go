@@ -319,3 +319,102 @@ func TestQuote(t *testing.T) {
 		t.Errorf("quote = %s", got)
 	}
 }
+
+func attach(t *testing.T, r *Runner, hl *hookLog) (int, error) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return r.Attach(ctx, &fleet.FakeInstance{ID: "vm-1"}, "vm-1", hl.hooks())
+}
+
+func TestAttachProbesThenFollowsTheLogFromTheStart(t *testing.T) {
+	api := github.NewFake()
+	hl := &hookLog{}
+	tg := useTarget(t, func(_ int, _ context.Context, o connector.RunOptions) error {
+		if isProbe(o) {
+			_, _ = o.Stdout.Write([]byte("alive\n"))
+			return nil
+		}
+		_, _ = o.Stdout.Write([]byte("Listening for Jobs\nRunning job: build\n"))
+		return &exitErr{code: 4}
+	})
+	code, err := attach(t, newRunner(api), hl)
+	if code != 4 || err != nil {
+		t.Fatalf("= %d, %v; want 4, nil", code, err)
+	}
+	calls := tg.all()
+	if len(calls) != 2 || !isProbe(connector.RunOptions{Command: calls[0].command}) || !isFollow(connector.RunOptions{Command: calls[1].command}) {
+		t.Fatalf("sessions = %v, want probe then follow", calls)
+	}
+	if !strings.Contains(calls[1].command, "off=0") {
+		t.Errorf("the follow does not start at the beginning of the log:\n%s", calls[1].command)
+	}
+	for _, c := range calls {
+		if c.stdin != "" || strings.Contains(c.command, "Runner.Listener") {
+			t.Errorf("attach started a runner or sent input: %+v", c)
+		}
+	}
+	if len(api.JitNames) != 0 {
+		t.Errorf("attach minted a JIT config for %v", api.JitNames)
+	}
+	if got := strings.Join(hl.list(), ","); got != "listening,running" {
+		t.Errorf("hooks = %s", got)
+	}
+}
+
+func TestAttachToAnExitedRunnerReadsItsCode(t *testing.T) {
+	tg := useTarget(t, func(_ int, _ context.Context, o connector.RunOptions) error {
+		_, _ = o.Stdout.Write([]byte("exited 7\n"))
+		return nil
+	})
+	code, err := attach(t, newRunner(github.NewFake()), &hookLog{})
+	if code != 7 || err != nil {
+		t.Errorf("= %d, %v; want 7, nil", code, err)
+	}
+	if n := len(tg.all()); n != 1 {
+		t.Errorf("sessions = %d, want the probe only", n)
+	}
+}
+
+func TestAttachToARunnerThatNeverStartedIsAnError(t *testing.T) {
+	useTarget(t, func(_ int, _ context.Context, o connector.RunOptions) error {
+		_, _ = o.Stdout.Write([]byte("none\n"))
+		return nil
+	})
+	_, err := attach(t, newRunner(github.NewFake()), &hookLog{})
+	if err == nil || errors.Is(err, scaler.ErrLost) || !strings.Contains(err.Error(), "never started") {
+		t.Errorf("err = %v, want a never-started error", err)
+	}
+}
+
+func TestAttachToAnUnreachableGuestIsLost(t *testing.T) {
+	old := connector.Dial
+	t.Cleanup(func() { connector.Dial = old })
+	connector.Dial = func(context.Context, provider.ConnectInfo, connector.DialOptions) (connector.Client, error) {
+		return nil, errors.New("no route to host")
+	}
+	_, err := attach(t, newRunner(github.NewFake()), &hookLog{})
+	if !errors.Is(err, scaler.ErrLost) {
+		t.Errorf("err = %v, want ErrLost", err)
+	}
+}
+
+func TestAttachRedialsWhenTheSessionDrops(t *testing.T) {
+	tg := useTarget(t, func(n int, _ context.Context, o connector.RunOptions) error {
+		switch {
+		case isProbe(o):
+			_, _ = o.Stdout.Write([]byte("alive\n"))
+			return nil
+		case n == 2:
+			return errors.New("connection reset")
+		}
+		return nil
+	})
+	code, err := attach(t, newRunner(github.NewFake()), &hookLog{})
+	if code != 0 || err != nil {
+		t.Fatalf("= %d, %v; want 0, nil", code, err)
+	}
+	if n := len(tg.all()); n != 4 {
+		t.Errorf("sessions = %d, want probe, follow, probe, follow", n)
+	}
+}

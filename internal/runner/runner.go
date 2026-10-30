@@ -75,22 +75,37 @@ func (r *Runner) Run(ctx context.Context, inst fleet.Instance, name string, hook
 		return 0, fmt.Errorf("generating the JIT config: %w", err)
 	}
 
-	script := startScript(r.dir)
-	var stdin io.Reader = strings.NewReader(jit.EncodedJITConfig + "\n")
+	return r.follow(ctx, inst, name, hooks, startScript(r.dir), strings.NewReader(jit.EncodedJITConfig+"\n"))
+}
+
+// Attach follows a runner an earlier daemon run started on inst, from the
+// start of its log, and returns as Run does. A runner that was never started
+// is an error, and ErrLost is returned when the guest stays unreachable for
+// the lost window.
+func (r *Runner) Attach(ctx context.Context, inst fleet.Instance, name string, hooks scaler.Hooks) (int, error) {
+	return r.follow(ctx, inst, name, hooks, "", nil)
+}
+
+// follow runs script, which starts the runner or follows one already running,
+// and re-attaches through the probe whenever the session breaks. An empty
+// script probes first.
+func (r *Runner) follow(ctx context.Context, inst fleet.Instance, name string, hooks scaler.Hooks, script string, stdin io.Reader) (int, error) {
 	for first := true; ; first = false {
-		out := &lineWriter{fn: func(line string) { r.marker(line, hooks) }}
-		dialed, err := r.session(ctx, inst, script, stdin, out)
-		out.flush()
-		if code, ok := exitStatus(err); ok {
-			return code, nil
+		if script != "" {
+			out := &lineWriter{fn: func(line string) { r.marker(line, hooks) }}
+			dialed, err := r.session(ctx, inst, script, stdin, out)
+			out.flush()
+			if code, ok := exitStatus(err); ok {
+				return code, nil
+			}
+			if ctx.Err() != nil {
+				return 0, ctx.Err()
+			}
+			if first && !dialed {
+				return 0, err
+			}
+			r.log.Warn("runner session lost", "runner", name, "error", err)
 		}
-		if ctx.Err() != nil {
-			return 0, ctx.Err()
-		}
-		if first && !dialed {
-			return 0, err
-		}
-		r.log.Warn("runner session lost", "runner", name, "error", err)
 
 		state, code, err := r.probe(ctx, inst)
 		switch {
