@@ -83,8 +83,8 @@ forgehand run -c forgehand.toml
 
 Hardware is plugin config that forgehand passes through untouched: `tpm` and `pci_devices`
 in `plugin_config`, one scale set per hardware class so `runs-on` selects it. A scale set with
-`pci_devices` sets `max_instances` at most the number of addresses. `check` does not validate
-`plugin_config`; a bad hardware key fails when `run` starts the plugin. The example config
+`pci_devices` sets `max_instances` at most the number of addresses. Each `pci_devices` scale set needs its own pool, disjoint from every other scale set's; overlap makes
+`max_instances` overstate capacity. The example config
 shows both, and the [plugin README](https://gitlab.com/dunn.dev/fleeting-plugin-libvirt) defines the keys.
 
 ## Verify a release

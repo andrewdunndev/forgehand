@@ -94,6 +94,8 @@ idle_count = 0
 # [scalesets.autoscaler]
 # plugin = "fleeting-plugin-libvirt"
 # # at most the number of addresses in pci_devices
+# # each pci_devices scale set needs its own pool, disjoint from every other scale set's;
+# # overlap makes max_instances overstate capacity
 # max_instances = 1
 #
 # [scalesets.autoscaler.plugin_config]
