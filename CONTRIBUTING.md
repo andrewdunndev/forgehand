@@ -11,7 +11,7 @@ GitHub account or hypervisor is needed: tests run against fakes and fleeting's
 dummy plugin.
 
 ```
-just test    go test -p 4 ./...
+just test    the test suite
 just lint    golangci-lint and go vet
 just build   bin/forgehand
 ```
