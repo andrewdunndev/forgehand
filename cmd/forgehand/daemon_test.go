@@ -746,3 +746,32 @@ func TestSIGUSR1DuringStartupIsIgnored(t *testing.T) {
 		}
 	}
 }
+
+func TestForcefulSignalsEndAHandoffWaitAndReleaseEverything(t *testing.T) {
+	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
+		t.Run(sig.String(), func(t *testing.T) {
+			t.Setenv("STATE_DIRECTORY", t.TempDir())
+			cfg := testConfig(5)
+			cfg.ScaleSets[0].Autoscaler.ConnectorConfig.UseStaticCredentials = true
+			r := newRig(t, cfg)
+			r.api.Session.Info.Statistics = assigned(1)
+			r.start()
+			r.boot("vm-a")
+
+			r.sigs <- syscall.SIGUSR1
+			if err, ok := r.result(300 * time.Millisecond); ok {
+				t.Fatalf("run returned (%v) while a slot was still starting", err)
+			}
+			r.sigs <- sig
+			if _, ok := r.result(5 * time.Second); !ok {
+				t.Fatal("run did not return after a forceful signal")
+			}
+			if !r.fl.IsShutdown() {
+				t.Error("fleet not shut down")
+			}
+			if released := r.fl.Released(); len(released) != 1 {
+				t.Errorf("released %v, want the slot", released)
+			}
+		})
+	}
+}
