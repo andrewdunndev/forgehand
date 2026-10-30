@@ -74,7 +74,7 @@ forgehand run -c forgehand.toml
 
 ## Verify a release
 
-Download a binary and its `.bundle` from the releases page, then:
+Download a binary from the releases page and its `.bundle` from the package registry (`https://gitlab.com/api/v4/projects/dunn.dev%2Fforgehand/packages/generic/forgehand/<tag>/forgehand-linux-amd64.bundle`; substitute the platform), then:
 
 ```
 cosign verify-blob forgehand-linux-amd64 --bundle forgehand-linux-amd64.bundle \
