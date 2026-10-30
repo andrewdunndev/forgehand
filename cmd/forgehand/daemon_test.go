@@ -823,6 +823,7 @@ func TestOnlyTERMAndINTAreForcefulDuringADrainOrHandoff(t *testing.T) {
 }
 
 func TestBreakerTripDuringHandoffKeepsTheFleetAndDuringDrainStopsIt(t *testing.T) {
+	var want string
 	for _, handoff := range []bool{true, false} {
 		t.Setenv("STATE_DIRECTORY", t.TempDir())
 		cfg := testConfig(1)
@@ -868,6 +869,11 @@ func TestBreakerTripDuringHandoffKeepsTheFleetAndDuringDrainStopsIt(t *testing.T
 		}
 		if got := r.fl.IsShutdown(); got == handoff {
 			t.Errorf("handoff=%v: fleet shut down = %v", handoff, got)
+		}
+		if want == "" {
+			want = err.Error()
+		} else if err.Error() != want {
+			t.Errorf("handoff=%v: error %q differs from %q, so the exit code could differ", handoff, err, want)
 		}
 	}
 }

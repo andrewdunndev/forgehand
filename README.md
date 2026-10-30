@@ -102,6 +102,8 @@ cosign verify-blob forgehand-linux-amd64 --bundle forgehand-linux-amd64.bundle \
   runners are deleted, the daemon exits 0 without
   deleting the VMs of running jobs. During a drain or a handoff only
   `SIGTERM` and `SIGINT` act; `SIGQUIT` and `SIGUSR1` are logged and ignored.
+  To stop a handoff early, send SIGTERM (`systemctl kill --kill-whom=main -s SIGTERM forgehand`);
+  that stops running jobs.
   A tripped failure breaker during a handoff exits 1 and still leaves the VMs
   of running jobs. `SIGUSR1` during startup is dropped: send it again once
   every scale set has started. See Upgrade.
@@ -148,9 +150,8 @@ systemctl kill --kill-whom=main -s SIGUSR1 forgehand
 systemctl start forgehand
 ```
 
-The old process removes idle runners and exits once only running jobs remain
-and their VMs are deleted;
-the new one adopts them as in Restart. `--kill-whom=main` keeps the signal off
+The old process removes idle runners and exits once the VMs of the removed runners are deleted, leaving the VMs of
+running jobs for the new one to adopt as in Restart. `--kill-whom=main` keeps the signal off
 the plugin child. With generated credentials `SIGUSR1` is ignored: drain with
 `SIGQUIT` (`systemctl stop`) and wait for the jobs instead.
 

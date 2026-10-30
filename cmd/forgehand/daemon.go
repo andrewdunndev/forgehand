@@ -523,6 +523,7 @@ func (d *daemon) release(units []*unit, stopListening context.CancelFunc) {
 		select {
 		case <-u.listened:
 		case <-ctx.Done():
+			d.log.Warn("leaving with listeners still running", "error", ctx.Err())
 			return
 		}
 	}
