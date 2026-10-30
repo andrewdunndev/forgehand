@@ -40,8 +40,11 @@ configuration schema is still changing.
   - POSIX `sh` and `setsid`
   - [actions/runner](https://github.com/actions/runner) unpacked at `runner.dir`, writable by `connector_config.username`
   - SSH reachable from the host as `connector_config.username`; the plugin
-    generates the key pair itself. Set `key_path` and
-    `use_static_credentials = true` only to use a key the image already trusts
+    generates the key pair itself. Set `use_static_credentials = true` with
+    `key_path` (read at start; the example unit loads it as a systemd
+    credential) to survive a daemon restart: the image must trust the matching
+    public key, because nothing is seeded, and a scale set name becomes its
+    state directory, so it must be one path segment
   - `autoscaler.instance_ready_command` gates readiness: a VM takes a job only
     after it exits 0 over SSH, and the connection retries until `connector_config.timeout`.
     Set it (`true` suffices) unless the image brings SSH up before the plugin reports an address

@@ -23,7 +23,7 @@ TimeoutStopSec=6h30min
 # The credentials appear under /run/credentials/forgehand.service/, readable
 # only by this service. Point private_key_path (and key_path, if used) there.
 LoadCredential=app.pem:/etc/forgehand/app.pem
-# Uncomment together with use_static_credentials = true.
+# Uncomment together with use_static_credentials = true; the image trusts the matching public key.
 #LoadCredential=guest-ssh:/etc/forgehand/guest-ssh
 
 # The plugin runs as a child under these limits. If it needs a socket, device

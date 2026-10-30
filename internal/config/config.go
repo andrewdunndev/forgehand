@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/BurntSushi/toml"
 )
@@ -236,6 +237,8 @@ func (c *Config) validate() error {
 func (s *ScaleSet) validate(at string, fail func(string, ...any)) {
 	if s.Name == "" {
 		fail("%s: name is required", at)
+	} else if !safeSegment(s.Name) {
+		fail("%s: name becomes a state directory name and must be one path segment: not \".\" or \"..\", with no \"/\" or backslash and no control characters", at)
 	}
 	if !repositoryURL(s.URL) {
 		fail("%s: url must be https://github.com/<owner>/<repo>, for example https://github.com/owner/repo", at)
@@ -289,4 +292,12 @@ func repositoryURL(raw string) bool {
 	}
 	owner, repo, ok := strings.Cut(strings.TrimPrefix(u.EscapedPath(), "/"), "/")
 	return ok && owner != "" && repo != "" && !strings.Contains(repo, "/") && !strings.HasSuffix(repo, ".git")
+}
+
+// safeSegment reports whether name is usable as one directory name.
+func safeSegment(name string) bool {
+	if name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
+		return false
+	}
+	return !strings.ContainsFunc(name, unicode.IsControl)
 }

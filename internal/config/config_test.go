@@ -142,6 +142,13 @@ func TestParseRejects(t *testing.T) {
 		{"static without key_path", func(s string) string {
 			return strings.Replace(s, `key_path = "/run/credentials/guest-ssh"`, "use_static_credentials = true", 1)
 		}, "use_static_credentials needs connector_config.key_path"},
+		{"name dot", func(s string) string { return strings.Replace(s, `name = "example"`, `name = "."`, 1) }, "one path segment"},
+		{"name dotdot", func(s string) string { return strings.Replace(s, `name = "example"`, `name = ".."`, 1) }, "one path segment"},
+		{"name slash", func(s string) string { return strings.Replace(s, `name = "example"`, `name = "a/b"`, 1) }, "one path segment"},
+		{"name traversal", func(s string) string { return strings.Replace(s, `name = "example"`, `name = "../x"`, 1) }, "one path segment"},
+		{"name backslash", func(s string) string { return strings.Replace(s, `name = "example"`, `name = "a\\b"`, 1) }, "one path segment"},
+		{"name newline", func(s string) string { return strings.Replace(s, `name = "example"`, `name = "a\nb"`, 1) }, "one path segment"},
+		{"name empty", func(s string) string { return strings.Replace(s, `name = "example"`, `name = ""`, 1) }, "name is required"},
 		{"duplicate name", func(s string) string { return s + valid[strings.Index(valid, "[[scalesets]]"):] }, "duplicate scale set name"},
 	}
 	for _, tt := range tests {
