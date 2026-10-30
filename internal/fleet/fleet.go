@@ -278,7 +278,6 @@ func settings(cfg config.Autoscaler) (provider.Settings, error) {
 		Protocol:             provider.Protocol(c.Protocol),
 		ProtocolPort:         c.ProtocolPort,
 		Username:             c.Username,
-		Password:             c.Password,
 		UseStaticCredentials: c.UseStaticCredentials,
 		Keepalive:            time.Duration(c.Keepalive),
 		Timeout:              time.Duration(c.Timeout),

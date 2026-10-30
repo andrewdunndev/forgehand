@@ -106,6 +106,9 @@ func TestParseRejects(t *testing.T) {
 		{"max_use_count", func(s string) string {
 			return strings.Replace(s, "max_instances = 2", "max_instances = 2\n  max_use_count = 1", 1)
 		}, "scalesets.autoscaler.max_use_count: forgehand runs one JIT runner per VM; remove this key"},
+		{"password", func(s string) string {
+			return strings.Replace(s, "username = \"runner\"", "username = \"runner\"\n    password = \"pw\"", 1)
+		}, "scalesets.autoscaler.connector_config.password: secrets reach forgehand only as credentials"},
 		{"runner_group", func(s string) string {
 			return strings.Replace(s, "labels = ", "runner_group = \"Default\"\nlabels = ", 1)
 		}, "runner_group: unknown key"},

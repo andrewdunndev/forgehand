@@ -44,7 +44,7 @@ const usage = `forgehand runs GitHub Actions jobs on single-use virtual machines
 
 usage:
   forgehand run -c config.toml     serve the configured scale sets until signalled
-  forgehand check -c config.toml   validate the config, the App and the plugin without starting a VM
+  forgehand check -c config.toml   validate the config and the App, and resolve the plugin
   forgehand version                print the version
 
 -c is the path to the TOML config; see examples/forgehand.toml.`

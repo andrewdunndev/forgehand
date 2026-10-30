@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -463,8 +464,12 @@ func (d *daemon) checkLocal(cfg config.ScaleSet, out io.Writer) error {
 	} else {
 		_, _ = fmt.Fprintf(out, "%s: plugin resolves to %s\n", cfg.Name, path)
 	}
+	appKeyNext := "download the App's private key to that path"
+	if strings.HasPrefix(cfg.GitHubApp.PrivateKeyPath, "/run/credentials/") {
+		appKeyNext = "that path exists only inside the unit; keep the key at the unit's LoadCredential source (mode 0600, root) and run check with the credential loaded, as the README shows"
+	}
 	for _, f := range []struct{ key, path, next string }{
-		{"github_app.private_key_path", cfg.GitHubApp.PrivateKeyPath, "download the App's private key to that path"},
+		{"github_app.private_key_path", cfg.GitHubApp.PrivateKeyPath, appKeyNext},
 		{"autoscaler.connector_config.key_path", cfg.Autoscaler.ConnectorConfig.KeyPath, "point it at the SSH private key the guest image trusts"},
 	} {
 		if f.path == "" {
