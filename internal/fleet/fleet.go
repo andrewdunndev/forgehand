@@ -71,6 +71,7 @@ type fleetImpl struct {
 	kill    func()
 	restore *restore
 	gone    *deletions
+	guard   *poolGuard
 }
 
 // LookPath resolves a plugin path, name or OCI reference to its binary.
@@ -123,6 +124,7 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 		log = hclog.NewNullLogger()
 	}
 	var rs *restore
+	var guard *poolGuard
 	var tsOpts []taskscaler.Option
 	if opts.StateDir != "" {
 		store, err := storage.NewFileStorage(opts.StateDir)
@@ -133,7 +135,8 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 		if rs, err = newRestore(store, log, ceiling); err != nil {
 			return nil, fmt.Errorf("reading the state directory: %w", err)
 		}
-		tsOpts = append(tsOpts, taskscaler.WithStorage(store))
+		guard = newPoolGuard(schedules(cfg.Policy))
+		tsOpts = append(tsOpts, taskscaler.WithStorage(guardedStore{store, guard}))
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -161,12 +164,16 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 		return nil, fmt.Errorf("creating taskscaler: %w", err)
 	}
 
-	if err := ts.ConfigureSchedule(schedules(cfg.Policy)...); err != nil {
+	configure := func() error { return ts.ConfigureSchedule(schedules(cfg.Policy)...) }
+	if guard != nil {
+		configure = func() error { return guard.start(ts) }
+	}
+	if err := configure(); err != nil {
 		ts.Shutdown(ctx)
 		cancel()
 		return nil, fmt.Errorf("configuring taskscaler schedules: %w", err)
 	}
-	return &fleetImpl{ts: ts, cancel: cancel, kill: kill, restore: rs, gone: gone}, nil
+	return &fleetImpl{ts: ts, cancel: cancel, kill: kill, restore: rs, gone: gone, guard: guard}, nil
 }
 
 func (f *fleetImpl) Acquire(ctx context.Context, key string) (Instance, error) {
@@ -180,6 +187,9 @@ func (f *fleetImpl) Acquire(ctx context.Context, key string) (Instance, error) {
 func (f *fleetImpl) Release(key string) {
 	if acq := f.ts.Get(key); held(acq) {
 		f.gone.expect(acq.InstanceID())
+		if f.guard != nil {
+			f.guard.note(acq.InstanceID())
+		}
 	}
 	f.ts.Release(key)
 }
