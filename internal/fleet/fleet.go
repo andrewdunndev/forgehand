@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"time"
 
 	"github.com/hashicorp/go-hclog"
@@ -273,7 +274,7 @@ func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string),
 		if in.Restored && rs != nil {
 			var adopted []Adopted
 			for _, key := range in.Acquisitions {
-				if acq := ts.Get(key); acq != nil {
+				if acq := ts.Get(key); held(acq) {
 					adopted = append(adopted, Adopted{Key: key, Instance: acq})
 				}
 			}
@@ -298,4 +299,14 @@ func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string),
 		}
 		return nil
 	}
+}
+
+// held reports whether Get found an acquisition: taskscaler answers a missing
+// key with a nil pointer inside a non-nil interface.
+func held(acq taskscaler.Acquisition) bool {
+	if acq == nil {
+		return false
+	}
+	v := reflect.ValueOf(acq)
+	return v.Kind() != reflect.Pointer || !v.IsNil()
 }

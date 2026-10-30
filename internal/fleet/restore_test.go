@@ -334,3 +334,32 @@ func TestUpFuncRestoredInstance(t *testing.T) {
 		t.Errorf("adopted = %+v, want old-1", adopted)
 	}
 }
+
+// taskscaler's Get returns a non-nil interface around a nil pointer for a key
+// it no longer holds.
+func TestUpFuncSkipsAcquisitionsTaskscalerNoLongerHolds(t *testing.T) {
+	store, err := storage.NewFileStorage(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	rs, err := newRestore(store, hclog.NewNullLogger(), time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	up := upFunc(context.Background(), config.Autoscaler{}, nil, rs)
+	held := map[string]taskscaler.Acquisition{
+		"kept":    &stubAcquisition{},
+		"typed":   (*stubAcquisition)(nil),
+		"untyped": nil,
+	}
+	err = up(onlyGet{held: held}, taskscaler.UpFuncInstance{
+		ID: "i", Acquisitions: []string{"typed", "kept", "untyped", "absent"}, Restored: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	adopted, _ := rs.take()
+	if len(adopted) != 1 || adopted[0].Key != "kept" {
+		t.Errorf("adopted = %+v, want only kept", adopted)
+	}
+}

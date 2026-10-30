@@ -1402,3 +1402,37 @@ func TestStoppedScalerAdoptsNothing(t *testing.T) {
 		t.Fatalf("live = %d after Stop", got)
 	}
 }
+
+// An adopted runner that exited or never started cannot say when its job is
+// over, so GitHub is asked again on every poll: a JobCompleted consumed before
+// the restart must not strand the VM.
+func TestAdoptedBusyRunnerThatEndedIsReapedOnceGitHubForgetsIt(t *testing.T) {
+	cases := map[string]result{
+		"exited":        {code: 0},
+		"never started": {err: errors.New("the runner was never started in the guest")},
+	}
+	for name, res := range cases {
+		t.Run(name, func(t *testing.T) {
+			r := newRig(t)
+			r.api.SetRemoveErr(scaleset.JobStillRunningError)
+			r.restore("old-1", "vm-1")
+			r.wantState("vm-1", Busy)
+			r.follow("vm-1", res)
+			r.waitFor("the end to be recorded", func() bool {
+				r.s.mu.Lock()
+				defer r.s.mu.Unlock()
+				return r.s.find("vm-1").lost
+			})
+			r.advance(time.Hour)
+			r.settledAdopting("vm-1")
+			if got := r.stateOfRunner("vm-1"); got != Busy {
+				t.Fatalf("slot is %s while GitHub reports the job running, want BUSY", got)
+			}
+
+			r.api.SetRemoveErr(scaleset.RunnerNotFoundError)
+			r.advance(time.Minute)
+			r.wantState("vm-1", Done)
+			r.wantReleased(1)
+		})
+	}
+}
