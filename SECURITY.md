@@ -42,5 +42,5 @@ redirect its SSH, and only a filter stops that. Set the libvirt plugin's opt-in
 `nwfilter` key (and `nwfilter_parameters` where the filter needs them) to an
 existing nwfilter, and use `clean-traffic`; the [plugin
 README](https://gitlab.com/dunn.dev/fleeting-plugin-libvirt) defines the keys
-and parameters. With SR-IOV hostdev there is no nwfilter; VF spoofchk is the
-control instead.
+and parameters. An SR-IOV hostdev NIC gets no nwfilter, and VF spoofchk stops
+MAC spoofing only, not a forged ARP or IP claim.
