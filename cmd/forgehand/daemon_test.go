@@ -601,7 +601,9 @@ func TestStaticCredentialsNeedStateDirectoryToRunNotToCheck(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		r.sigs <- syscall.SIGTERM
-		<-r.done
+		if err := <-r.done; err != nil {
+			t.Logf("run after SIGTERM: %v", err)
+		}
 		t.Fatal("run started without STATE_DIRECTORY")
 	}
 	if started, _ := r.fleetOptions(); started != 0 {
@@ -613,7 +615,9 @@ func TestStaticCredentialsNeedStateDirectoryToRunNotToCheck(t *testing.T) {
 	r.start()
 	r.wait("fleet start", func() bool { n, _ := r.fleetOptions(); return n == 1 })
 	r.sigs <- syscall.SIGTERM
-	<-r.done
+	if err := <-r.done; err != nil {
+		t.Errorf("run after SIGTERM: %v", err)
+	}
 }
 
 func TestStorageIsPerScaleSetAndOnlyForStaticCredentials(t *testing.T) {
@@ -637,7 +641,9 @@ func TestStorageIsPerScaleSetAndOnlyForStaticCredentials(t *testing.T) {
 				t.Errorf("StateDir = %q, want %q", opts.StateDir, tt.want)
 			}
 			r.sigs <- syscall.SIGTERM
-			<-r.done
+			if err := <-r.done; err != nil {
+				t.Errorf("run after SIGTERM: %v", err)
+			}
 		})
 	}
 }

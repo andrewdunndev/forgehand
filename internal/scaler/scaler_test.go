@@ -842,8 +842,8 @@ func TestDrainRemovesListeningAtOnceAndWaitsForBusy(t *testing.T) {
 		t.Fatalf("busy slot is %s", got)
 	}
 	select {
-	case <-drained:
-		t.Fatal("Drain returned with a BUSY slot")
+	case err := <-drained:
+		t.Fatalf("Drain returned with a BUSY slot: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
 
@@ -1261,8 +1261,8 @@ func TestDrainWaitsForAdoptingSlotsToClassify(t *testing.T) {
 	drained := make(chan error, 1)
 	go func() { drained <- r.s.Drain(context.Background()) }()
 	select {
-	case <-drained:
-		t.Fatal("Drain returned with an ADOPTING slot")
+	case err := <-drained:
+		t.Fatalf("Drain returned with an ADOPTING slot: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
 	if got := r.stateOfRunner("vm-1"); got != Adopting {
@@ -1291,8 +1291,8 @@ func TestDrainWaitsForAdoptedBusyJob(t *testing.T) {
 	drained := make(chan error, 1)
 	go func() { drained <- r.s.Drain(context.Background()) }()
 	select {
-	case <-drained:
-		t.Fatal("Drain returned with a BUSY adopted slot")
+	case err := <-drained:
+		t.Fatalf("Drain returned with a BUSY adopted slot: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
 	r.scale(completed("vm-1"))
@@ -1316,8 +1316,8 @@ func TestDrainWaitsForTheRestoreAndAdoptsWhatItFinds(t *testing.T) {
 	drained := make(chan error, 1)
 	go func() { drained <- r.s.Drain(context.Background()) }()
 	select {
-	case <-drained:
-		t.Fatal("Drain returned while the restore was under way")
+	case err := <-drained:
+		t.Fatalf("Drain returned while the restore was under way: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
 
@@ -1326,8 +1326,8 @@ func TestDrainWaitsForTheRestoreAndAdoptsWhatItFinds(t *testing.T) {
 	r.fl.SetRestoring(false)
 	r.advance(time.Second)
 	select {
-	case <-drained:
-		t.Fatal("Drain returned with the adopted job running")
+	case err := <-drained:
+		t.Fatalf("Drain returned with the adopted job running: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
 	r.scale(completed("vm-1"))
@@ -1352,8 +1352,8 @@ func TestDrainWaitsForReapingSlots(t *testing.T) {
 	go func() { drained <- r.s.Drain(context.Background()) }()
 	r.wantState("vm-1", Reaping)
 	select {
-	case <-drained:
-		t.Fatal("Drain returned with a REAPING slot")
+	case err := <-drained:
+		t.Fatalf("Drain returned with a REAPING slot: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
 	r.api.SetRemoveErr(nil)
@@ -1445,8 +1445,8 @@ func TestDrainReturnsWhenTheRestoreEndsWithNothingToAdopt(t *testing.T) {
 	drained := make(chan error, 1)
 	go func() { drained <- r.s.Drain(context.Background()) }()
 	select {
-	case <-drained:
-		t.Fatal("Drain returned while the restore was under way")
+	case err := <-drained:
+		t.Fatalf("Drain returned while the restore was under way: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
 
@@ -1582,8 +1582,8 @@ func TestHandoffWaitsForEverySlotThatIsNotBusy(t *testing.T) {
 	go func() { handoff <- r.s.Handoff(context.Background()) }()
 	r.wantState("vm-1", Reaping)
 	select {
-	case <-handoff:
-		t.Fatal("Handoff returned with a REAPING slot")
+	case err := <-handoff:
+		t.Fatalf("Handoff returned with a REAPING slot: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
 	r.api.SetRemoveErr(scaleset.JobStillRunningError)
@@ -1604,8 +1604,8 @@ func TestHandoffWaitsForAdoptingSlotsToClassify(t *testing.T) {
 	handoff := make(chan error, 1)
 	go func() { handoff <- r.s.Handoff(context.Background()) }()
 	select {
-	case <-handoff:
-		t.Fatal("Handoff returned with an ADOPTING slot")
+	case err := <-handoff:
+		t.Fatalf("Handoff returned with an ADOPTING slot: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
 	r.api.SetRemoveErr(scaleset.JobStillRunningError)
@@ -1625,8 +1625,8 @@ func TestHandoffWaitsForStartingSlots(t *testing.T) {
 	handoff := make(chan error, 1)
 	go func() { handoff <- r.s.Handoff(context.Background()) }()
 	select {
-	case <-handoff:
-		t.Fatal("Handoff returned with a STARTING slot")
+	case err := <-handoff:
+		t.Fatalf("Handoff returned with a STARTING slot: %v", err)
 	case <-time.After(20 * time.Millisecond):
 	}
 	r.exit("vm-1", 0)
