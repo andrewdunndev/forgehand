@@ -43,9 +43,7 @@ configuration may still change in a minor release; the release notes say how.
   - [actions/runner](https://github.com/actions/runner) unpacked at `runner.dir`, writable by `connector_config.username`
   - SSH reachable from the host as `connector_config.username`; the plugin
     generates the key pair itself. Set `use_static_credentials = true` with
-    `key_path` (read at start; the example unit loads it as a systemd
-    credential) to survive a daemon restart: the image must trust the matching
-    public key, because nothing is seeded
+    `key_path` (read at start) to survive a daemon restart: the image must trust the matching public key, because nothing is seeded
   - `autoscaler.instance_ready_command` gates readiness: a VM takes a job only
     after it exits 0 over SSH, and the connection retries until `connector_config.timeout`.
     Set it (`true` suffices) unless the image brings SSH up before the plugin reports an address
@@ -81,16 +79,20 @@ forgehand check -c forgehand.toml
 forgehand run -c forgehand.toml
 ```
 
-The example sets `private_key_path` under `/run/credentials/`, which exists only inside the unit. To check that config, keep the key at `/etc/forgehand/app.pem` (mode `0600`, root) and load it the way the unit does:
+`check` resolves the plugin, finds the set key files and authenticates the App, then prints `ok`; it creates nothing, starts no VM and leaves `plugin_config` to `run`.
+[`examples/forgehand.service`](examples/forgehand.service) is the user unit of a lingering `forgehand` service user. With the libvirt plugin:
 
 ```
-systemd-run --pipe --wait -p DynamicUser=yes -p LoadCredential=app.pem:/etc/forgehand/app.pem /usr/local/bin/forgehand check -c /etc/forgehand/forgehand.toml
+sudo useradd --system --create-home --home-dir /var/srv/forgehand --groups libvirt forgehand
+sudo loginctl enable-linger forgehand
+sudo -u forgehand mkdir -p ~forgehand/.config/forgehand ~forgehand/.config/systemd/user
+sudo install -o forgehand -m 0600 forgehand.toml app.pem ~forgehand/.config/forgehand/
+sudo install -o forgehand -m 0644 forgehand.service ~forgehand/.config/systemd/user/
+sudo -u forgehand /usr/local/bin/forgehand check -c ~forgehand/.config/forgehand/forgehand.toml
+sudo -u forgehand XDG_RUNTIME_DIR=/run/user/$(id -u forgehand) systemctl --user enable --now forgehand
 ```
 
-`check` resolves the plugin, finds the key files that are set and authenticates the App, then prints `ok`. It does not start the plugin; `plugin_config` is validated when `run` starts it. It creates nothing and starts no VM.
-[`examples/forgehand.toml`](examples/forgehand.toml) comments each required key;
-[`examples/forgehand.service`](examples/forgehand.service) is a hardened systemd unit (sandboxed, no capabilities, private state `0700`) that runs as a `DynamicUser` and passes secrets with `LoadCredential`.
-With `UMask=0077`, a plugin `lock_file` shared with other accounts must be created beforehand with the wanted mode; an `admit_command` runs inside the same sandbox (`ProcSubset=pid` hides most of `/proc`).
+Run `systemctl --user` and `journalctl --user` with that `sudo -u forgehand XDG_RUNTIME_DIR=...` prefix. With `UMask=0077`, create a plugin `lock_file` shared with other accounts beforehand, with its mode.
 
 Hardware is plugin config that forgehand passes through untouched: `tpm` and `pci_devices`
 in `plugin_config`, one scale set per hardware class so `runs-on` selects it. A scale set with
@@ -119,7 +121,7 @@ table, the `[[scalesets.autoscaler.policy]]` tables (`periods`, `timezone`,
 `keepalive`, `use_external_addr`, among others) take taskscaler's defaults and
 mean what they do in GitLab's
 [`[runners.autoscaler]`](https://docs.gitlab.com/runner/configuration/advanced-configuration/#the-runnersautoscaler-section)
-documentation. Unknown keys are refused, so a typo fails at load, and so is `connector_config.password`: secrets reach forgehand only as credentials.
+documentation. Unknown keys are refused, so a typo fails at load, and so is `connector_config.password`: secrets reach forgehand only as key files.
 
 ## Verify a release
 
@@ -142,7 +144,7 @@ cosign verify-blob forgehand-linux-amd64 --bundle forgehand-linux-amd64.bundle \
   runners are deleted, the daemon exits 0 without
   deleting the VMs of running jobs. During a drain or a handoff only
   `SIGTERM` and `SIGINT` act; `SIGQUIT` and `SIGUSR1` are logged and ignored.
-  To stop a handoff early, send SIGTERM (`systemctl kill --kill-whom=main -s SIGTERM forgehand`);
+  To stop a handoff early, send SIGTERM (`systemctl --user kill --kill-whom=main -s SIGTERM forgehand`);
   that stops running jobs.
   A tripped failure breaker during a handoff exits 1 and still leaves the VMs
   of running jobs. `SIGUSR1` during startup is dropped: send it again once
@@ -154,8 +156,7 @@ cosign verify-blob forgehand-linux-amd64 --bundle forgehand-linux-amd64.bundle \
 ## Restart
 
 With `use_static_credentials = true`, forgehand keeps its autoscaler state in
-`$STATE_DIRECTORY/<scale set name>` (the example unit sets
-`StateDirectory=forgehand`). `run` refuses to start without `STATE_DIRECTORY`
+`$STATE_DIRECTORY/<scale set name>` (`~/.local/state/forgehand/` in the example unit). `run` refuses to start without `STATE_DIRECTORY`
 when a scale set uses them. A restart adopts what an earlier run left:
 
 - A VM whose runner is running a job keeps running; the new process follows
@@ -184,16 +185,16 @@ With `use_static_credentials = true` on every scale set, a running job survives
 an upgrade:
 
 ```
-systemctl kill --kill-whom=main -s SIGUSR1 forgehand
+systemctl --user kill --kill-whom=main -s SIGUSR1 forgehand
 # wait for the service to exit
 # replace the binary
-systemctl start forgehand
+systemctl --user start forgehand
 ```
 
 The old process removes idle runners and exits once the VMs of the removed runners are deleted, leaving the VMs of
 running jobs for the new one to adopt as in Restart. `--kill-whom=main` keeps the signal off
 the plugin child. With generated credentials `SIGUSR1` is ignored: drain with
-`SIGQUIT` (`systemctl stop`) and wait for the jobs instead.
+`SIGQUIT` (`systemctl --user stop`) and wait for the jobs instead.
 
 ## Instance health
 

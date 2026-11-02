@@ -8,7 +8,7 @@ StartLimitIntervalSec=10min
 StartLimitBurst=5
 
 [Service]
-ExecStart=/usr/local/bin/forgehand run -c /etc/forgehand/forgehand.toml
+ExecStart=/usr/local/bin/forgehand run -c %h/.config/forgehand/forgehand.toml
 Restart=on-failure
 RestartSec=5s
 
@@ -21,41 +21,16 @@ KillSignal=SIGQUIT
 KillMode=mixed
 TimeoutStopSec=6h30min
 
-# The credentials appear under /run/credentials/forgehand.service/, readable
-# only by this service. Point private_key_path (and key_path, if used) there.
-LoadCredential=app.pem:/etc/forgehand/app.pem
-# Uncomment together with use_static_credentials = true; the image trusts the matching public key.
-#LoadCredential=guest-ssh:/etc/forgehand/guest-ssh
-
-# The plugin runs as a child under these limits. If it needs a socket, device
-# or path outside them, grant it with SupplementaryGroups= or ReadWritePaths=.
-DynamicUser=yes
-# The libvirt plugin needs the libvirt socket.
-#SupplementaryGroups=libvirt
-# Restart state for scale sets with use_static_credentials (STATE_DIRECTORY).
-# The files hold the guest private key, so keep them private to the service.
+# Restart state for scale sets with use_static_credentials, in
+# ~/.local/state/forgehand. The files hold the guest private key.
 StateDirectory=forgehand
 StateDirectoryMode=0700
 UMask=0077
-Environment=HOME=/var/lib/forgehand
 Environment=FLEETING_PLUGIN_PATH=/usr/local/lib/fleeting/plugins
-CapabilityBoundingSet=
-AmbientCapabilities=
+
+# The plugin runs as a child under these limits. They need no namespaces, so
+# they hold in a user manager whatever the host's user namespace policy.
 NoNewPrivileges=yes
-ProtectSystem=strict
-ReadOnlyPaths=/usr/local/lib/fleeting
-ProtectHome=yes
-PrivateTmp=yes
-PrivateDevices=yes
-ProtectKernelModules=yes
-ProtectKernelTunables=yes
-ProtectKernelLogs=yes
-ProtectControlGroups=yes
-ProtectClock=yes
-ProtectHostname=yes
-# Hides other processes' /proc entries.
-ProtectProc=invisible
-ProcSubset=pid
 # Unix for the libvirt socket and the plugin's RPC socket; inet for GitHub,
 # metrics and guest SSH.
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
@@ -69,4 +44,4 @@ SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target

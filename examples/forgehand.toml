@@ -26,7 +26,7 @@ labels = ["self-hosted", "example"]
 # the path of its private key (PEM). The App needs Administration read and write.
 client_id = "Iv1.0000000000000000"
 installation_id = 12345678
-private_key_path = "/run/credentials/forgehand.service/app.pem"
+private_key_path = "/var/srv/forgehand/.config/forgehand/app.pem"
 
 [scalesets.runner]
 # required: where actions/runner is unpacked in the guest image.
@@ -55,9 +55,9 @@ name_prefix = "forgehand-"
 protocol = "ssh"
 # the guest user. The plugin generates the SSH key pair itself. To use a key
 # the image already trusts instead, set use_static_credentials = true and
-# key_path = "/run/credentials/forgehand.service/guest-ssh". Only then does a
-# restart adopt the VMs of running jobs; the state lives under the unit's
-# StateDirectory, in a directory named after the scale set.
+# key_path = "/var/srv/forgehand/.config/forgehand/guest-ssh" (mode 0600). Only
+# then does a restart adopt the VMs of running jobs; the state lives under the
+# unit's StateDirectory, in a directory named after the scale set.
 username = "runner"
 timeout = "10m"
 

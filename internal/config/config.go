@@ -23,7 +23,7 @@ var rejectedKeys = map[string]string{
 	"capacity_per_instance":        "forgehand runs one JIT runner per VM; remove this key",
 	"max_use_count":                "forgehand runs one JIT runner per VM; remove this key",
 	"delete_instances_on_shutdown": "forgehand always deletes the VMs when it stops; remove this key",
-	"password":                     "secrets reach forgehand only as credentials; remove this key and use key_path with LoadCredential",
+	"password":                     "secrets reach forgehand only as key files; remove this key and use key_path",
 }
 
 type Config struct {

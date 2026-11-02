@@ -19,7 +19,7 @@ labels = ["self-hosted", "example"]
   [scalesets.github_app]
   client_id = "Iv1.example"
   installation_id = 12345678
-  private_key_path = "/run/credentials/app.pem"
+  private_key_path = "/var/srv/forgehand/.config/forgehand/app.pem"
   [scalesets.runner]
   dir = "/opt/actions-runner"
   listen_timeout = "3m"
@@ -35,7 +35,7 @@ labels = ["self-hosted", "example"]
     pool = ["a", "b"]
     [scalesets.autoscaler.connector_config]
     username = "runner"
-    key_path = "/run/credentials/guest-ssh"
+    key_path = "/var/srv/forgehand/.config/forgehand/guest-ssh"
     timeout = "10m"
   [[scalesets.autoscaler.policy]]
   idle_count = 0
@@ -108,7 +108,7 @@ func TestParseRejects(t *testing.T) {
 		}, "scalesets.autoscaler.max_use_count: forgehand runs one JIT runner per VM; remove this key"},
 		{"password", func(s string) string {
 			return strings.Replace(s, "username = \"runner\"", "username = \"runner\"\n    password = \"pw\"", 1)
-		}, "scalesets.autoscaler.connector_config.password: secrets reach forgehand only as credentials"},
+		}, "scalesets.autoscaler.connector_config.password: secrets reach forgehand only as key files"},
 		{"runner_group", func(s string) string {
 			return strings.Replace(s, "labels = ", "runner_group = \"Default\"\nlabels = ", 1)
 		}, "runner_group: unknown key"},
@@ -138,13 +138,13 @@ func TestParseRejects(t *testing.T) {
 		{"no client_id", func(s string) string { return strings.Replace(s, `client_id = "Iv1.example"`, "", 1) }, "github_app.client_id"},
 		{"no installation_id", func(s string) string { return strings.Replace(s, "installation_id = 12345678", "", 1) }, "github_app.installation_id"},
 		{"no private_key_path", func(s string) string {
-			return strings.Replace(s, `private_key_path = "/run/credentials/app.pem"`, "", 1)
+			return strings.Replace(s, `private_key_path = "/var/srv/forgehand/.config/forgehand/app.pem"`, "", 1)
 		}, "github_app.private_key_path"},
 		{"no runner dir", func(s string) string { return strings.Replace(s, `dir = "/opt/actions-runner"`, "", 1) }, "runner.dir"},
 		{"no plugin", func(s string) string { return strings.Replace(s, `plugin = "fleeting-plugin-static"`, "", 1) }, "autoscaler.plugin is required"},
 		{"no max_instances", func(s string) string { return strings.Replace(s, "max_instances = 2", "", 1) }, "max_instances"},
 		{"static without key_path", func(s string) string {
-			return strings.Replace(s, `key_path = "/run/credentials/guest-ssh"`, "use_static_credentials = true", 1)
+			return strings.Replace(s, `key_path = "/var/srv/forgehand/.config/forgehand/guest-ssh"`, "use_static_credentials = true", 1)
 		}, "use_static_credentials needs connector_config.key_path"},
 		{"name dot", func(s string) string { return strings.Replace(s, `name = "example"`, `name = "."`, 1) }, "one path segment"},
 		{"name dotdot", func(s string) string { return strings.Replace(s, `name = "example"`, `name = ".."`, 1) }, "one path segment"},
@@ -255,7 +255,7 @@ func TestParseAcceptsStaticCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := cfg.ScaleSets[0].Autoscaler.ConnectorConfig
-	if !c.UseStaticCredentials || c.KeyPath != "/run/credentials/guest-ssh" || c.Username != "runner" {
+	if !c.UseStaticCredentials || c.KeyPath != "/var/srv/forgehand/.config/forgehand/guest-ssh" || c.Username != "runner" {
 		t.Errorf("connector_config = %+v", c)
 	}
 }

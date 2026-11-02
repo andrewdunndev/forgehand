@@ -162,7 +162,6 @@ func TestCheck(t *testing.T) {
 	}{
 		{"missing app key", func(s *config.ScaleSet) { s.GitHubApp.PrivateKeyPath += ".gone" }, "github_app.private_key_path: "},
 		{"missing connector key", func(s *config.ScaleSet) { s.Autoscaler.ConnectorConfig.KeyPath += ".gone" }, "connector_config.key_path: "},
-		{"credential path names the unit", func(s *config.ScaleSet) { s.GitHubApp.PrivateKeyPath = "/run/credentials/forgehand.service/app.pem" }, "LoadCredential source"},
 		{"key is a directory", func(s *config.ScaleSet) {
 			s.Autoscaler.ConnectorConfig.KeyPath = filepath.Dir(s.Autoscaler.ConnectorConfig.KeyPath)
 		}, "is a directory"},

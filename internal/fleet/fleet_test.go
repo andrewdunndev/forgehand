@@ -268,7 +268,7 @@ labels = ["self-hosted", "gpu"]
   [scalesets.github_app]
   client_id = "Iv1.example"
   installation_id = 1
-  private_key_path = "/run/credentials/app.pem"
+  private_key_path = "/var/srv/forgehand/.config/forgehand/app.pem"
   [scalesets.runner]
   dir = "/opt/actions-runner"
   [scalesets.autoscaler]
