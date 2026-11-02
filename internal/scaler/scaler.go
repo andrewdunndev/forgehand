@@ -243,14 +243,20 @@ func (s *Scaler) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	s.stopped = true
 	var registered []string
+	var waiting, busy int
 	for _, sl := range s.slots {
 		switch sl.state {
+		case Acquiring:
+			waiting++
+		case Busy:
+			busy++
 		case Starting, Listening, Reaping, Adopting:
 			registered = append(registered, sl.name)
 		}
 		s.terminate(sl, Cancelled)
 	}
 	s.mu.Unlock()
+	s.log.Info("stopping", "waiting_for_vm", waiting, "busy", busy)
 
 	done := make(chan struct{})
 	go func() {

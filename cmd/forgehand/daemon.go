@@ -402,8 +402,8 @@ func (d *daemon) drain(units []*unit, sigs <-chan os.Signal, fatal <-chan error,
 	}
 }
 
-// stop cancels every slot, shuts the fleets down and waits for the listeners,
-// all within shutdown_timeout.
+// stop cancels every slot, shuts the fleets down alongside and waits for the
+// listeners, all within shutdown_timeout.
 func (d *daemon) stop(units []*unit, stopListening context.CancelFunc) error {
 	stopListening()
 	timeout := d.cfg.ShutdownDuration()
@@ -418,10 +418,17 @@ func (d *daemon) stop(units []*unit, stopListening context.CancelFunc) error {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				// Slots blocked in Acquire wait on instances still being
+				// prepared, and only the fleet's shutdown ends a preparation.
+				shut := make(chan struct{})
+				go func() {
+					defer close(shut)
+					u.fleet.Shutdown(ctx)
+				}()
 				if err := u.scaler.Stop(ctx); err != nil {
 					u.log.Warn("stopping the scaler", "error", err)
 				}
-				u.fleet.Shutdown(ctx)
+				<-shut
 				select {
 				case <-u.listened:
 				case <-ctx.Done():

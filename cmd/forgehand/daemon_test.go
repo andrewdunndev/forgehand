@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -944,5 +945,76 @@ func TestMetricsServerBoundsHeaderReads(t *testing.T) {
 	defer stop()
 	if d.metricsSrv.ReadHeaderTimeout <= 0 {
 		t.Fatal("metrics server has no ReadHeaderTimeout")
+	}
+}
+
+// preparingGroup is a plugin whose ConnectInfo honors its context but, left
+// alone, takes preparationTime to answer, as a guest whose DHCP never replies.
+type preparingGroup struct {
+	*dummy.InstanceGroup
+	preparing atomic.Int32
+
+	mu        sync.Mutex
+	decreased []string
+}
+
+const preparationTime = 30 * time.Second
+
+func (g *preparingGroup) ConnectInfo(ctx context.Context, _ string) (provider.ConnectInfo, error) {
+	g.preparing.Add(1)
+	select {
+	case <-ctx.Done():
+		return provider.ConnectInfo{}, ctx.Err()
+	case <-time.After(preparationTime):
+		return provider.ConnectInfo{}, errors.New("no address")
+	}
+}
+
+func (g *preparingGroup) Decrease(ctx context.Context, ids []string) ([]string, error) {
+	done, err := g.InstanceGroup.Decrease(ctx, ids)
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.decreased = append(g.decreased, done...)
+	return done, err
+}
+
+func (g *preparingGroup) removed() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	return len(g.decreased)
+}
+
+func TestStopDeletesInstancesStillInConnectionPreparation(t *testing.T) {
+	for _, sig := range []syscall.Signal{syscall.SIGQUIT, syscall.SIGTERM} {
+		t.Run(sig.String(), func(t *testing.T) { stopDuringPreparation(t, sig) })
+	}
+}
+
+func stopDuringPreparation(t *testing.T, sig syscall.Signal) {
+	t.Helper()
+	group := &preparingGroup{InstanceGroup: &dummy.InstanceGroup{MaxSize: 4}}
+	r := newRig(t, testConfig(3))
+	r.d.deps.startFleet = func(config.Autoscaler, fleet.Options) (fleet.Fleet, error) {
+		return fleet.New(group, config.Autoscaler{
+			MaxInstances:                2,
+			UpdateInterval:              config.Duration(30 * time.Millisecond),
+			UpdateIntervalWhenExpecting: config.Duration(10 * time.Millisecond),
+			DeletionRetryInterval:       config.Duration(30 * time.Millisecond),
+			ShutdownDeletionInterval:    config.Duration(10 * time.Millisecond),
+		}, fleet.Options{}, taskscaler.WithAcquireDelay(5*time.Millisecond))
+	}
+	r.api.Session.Info.Statistics = assigned(2)
+	r.start()
+	r.wait("both instances in connection preparation", func() bool { return group.preparing.Load() == 2 })
+	time.Sleep(200 * time.Millisecond)
+
+	began := time.Now()
+	r.sigs <- sig
+	err, ok := r.result(2 * time.Second)
+	if !ok || err != nil {
+		t.Fatalf("run = %v (returned %v) after %s, want a clean stop inside shutdown_timeout\nlog:\n%s", err, ok, time.Since(began), r.out.String())
+	}
+	if n := group.removed(); n != 2 {
+		t.Errorf("plugin deleted %d instances, want the 2 still in preparation\nlog:\n%s", n, r.out.String())
 	}
 }
