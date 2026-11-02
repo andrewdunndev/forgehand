@@ -4,9 +4,11 @@ forgehand is a personal project; contributions are welcome, and the bar is
 whether they make a single-use VM per job more reliable.
 
 Issues and changes are welcome on either forge:
-GitLab (canonical): https://gitlab.com/dunn.dev/forgehand (issues, merge requests)
-GitHub (mirror): https://github.com/andrewdunndev/forgehand (issues, pull requests)
-GitHub pull requests are landed through GitLab; the mirror then marks them merged.
+
+- GitLab (canonical): https://gitlab.com/dunn.dev/forgehand
+- GitHub (mirror): https://github.com/andrewdunndev/forgehand
+
+GitHub pull requests land through GitLab; the mirror then marks them merged.
 
 ## Development environment
 

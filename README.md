@@ -208,9 +208,12 @@ endpoint has no authentication, so bind it to loopback or firewall it.
 ## Contributing
 
 Issues and changes are welcome on either forge:
-GitLab (canonical): https://gitlab.com/dunn.dev/forgehand (issues, merge requests)
-GitHub (mirror): https://github.com/andrewdunndev/forgehand (issues, pull requests)
-GitHub pull requests are landed through GitLab; the mirror then marks them merged.
+
+- GitLab (canonical): https://gitlab.com/dunn.dev/forgehand
+- GitHub (mirror): https://github.com/andrewdunndev/forgehand
+
+GitHub pull requests land through GitLab; the mirror then marks them merged.
+
 See [CONTRIBUTING.md](CONTRIBUTING.md); report vulnerabilities as
 [SECURITY.md](SECURITY.md) describes.
 
