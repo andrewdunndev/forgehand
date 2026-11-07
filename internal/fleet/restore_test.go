@@ -338,7 +338,7 @@ func TestUpFuncRestoredInstance(t *testing.T) {
 	}
 	left := make(chan string, 1)
 	cfg := config.Autoscaler{InstanceReadyCommand: "false"}
-	up := upFunc(context.Background(), cfg, func(id string) { left <- id }, rs)
+	up := upFunc(context.Background(), cfg, func(id string) { left <- id }, rs, nil)
 
 	err = up(onlyGet{held: map[string]taskscaler.Acquisition{"old-1": stubAcquisition{}}}, taskscaler.UpFuncInstance{
 		ID: "i", Cause: fleeting.CausePreexisted, Acquisitions: []string{"old-1"}, Restored: true,
@@ -371,7 +371,7 @@ func TestUpFuncSkipsAcquisitionsTaskscalerNoLongerHolds(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	up := upFunc(context.Background(), config.Autoscaler{}, nil, rs)
+	up := upFunc(context.Background(), config.Autoscaler{}, nil, rs, nil)
 	held := map[string]taskscaler.Acquisition{
 		"kept":    &stubAcquisition{},
 		"typed":   (*stubAcquisition)(nil),

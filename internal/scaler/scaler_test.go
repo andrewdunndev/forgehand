@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -158,6 +159,25 @@ type rig struct {
 	rn      *fakeRunner
 	log     *eventLog
 	out     *syncWriter
+	reasons *reasonLog
+}
+
+// reasonLog records the reasons of failed slots.
+type reasonLog struct {
+	mu  sync.Mutex
+	got []string
+}
+
+func (l *reasonLog) add(reason string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.got = append(l.got, reason)
+}
+
+func (l *reasonLog) list() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return slices.Clone(l.got)
 }
 
 func newRig(t *testing.T) *rig {
@@ -167,6 +187,7 @@ func newRig(t *testing.T) *rig {
 	log := &eventLog{}
 	out := &syncWriter{}
 	rn := &fakeRunner{api: api, runs: map[string]*run{}, attached: map[string]*run{}, fl: fl}
+	reasons := &reasonLog{}
 	clk := &clock{t: time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)}
 	s := New(Config{
 		MaxInstances:           2,
@@ -174,10 +195,11 @@ func newRig(t *testing.T) *rig {
 		ListenTimeout:          3 * time.Minute,
 		IdleTimeout:            5 * time.Minute,
 		InstanceAcquireTimeout: 15 * time.Minute,
+		OnSlotFailed:           reasons.add,
 		Logger:                 hclog.New(&hclog.LoggerOptions{Output: out, Level: hclog.Debug}),
 	}, api.Session, loggedRegistry{api, log}, loggedFleet{fl, log}, rn)
 	s.now = clk.Now
-	r := &rig{t: t, s: s, clk: clk, api: api, session: api.Session, fl: fl, rn: rn, log: log, out: out}
+	r := &rig{t: t, s: s, clk: clk, api: api, session: api.Session, fl: fl, rn: rn, log: log, out: out, reasons: reasons}
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -781,6 +803,14 @@ func TestAcquireTimeoutFailsSlot(t *testing.T) {
 		t.Fatalf("slot is %s, want FAILED", got)
 	}
 	r.waitFor("Acquire to be cancelled", func() bool { return len(r.fl.Waiting()) == 0 })
+	wantReasons(t, r, "acquire_timeout")
+}
+
+func wantReasons(t *testing.T, r *rig, want ...string) {
+	t.Helper()
+	if got := r.reasons.list(); !slices.Equal(got, want) {
+		t.Fatalf("failure reasons = %v, want %v", got, want)
+	}
 }
 
 func TestFailureBackoffDoublesAndDoneOutOfBusyResets(t *testing.T) {
@@ -789,6 +819,7 @@ func TestFailureBackoffDoublesAndDoneOutOfBusyResets(t *testing.T) {
 	r.boot("vm-1")
 	r.exit("vm-1", 1)
 	r.wantState("vm-1", Failed)
+	wantReasons(t, r, "runner_exit")
 	r.advance(backoffBase - time.Second)
 	if got := r.slotCount(); got != 1 {
 		t.Fatalf("respawned inside the backoff: slots = %d", got)

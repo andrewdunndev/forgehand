@@ -1018,3 +1018,38 @@ func stopDuringPreparation(t *testing.T, sig syscall.Signal) {
 		t.Errorf("plugin deleted %d instances, want the 2 still in preparation\nlog:\n%s", n, r.out.String())
 	}
 }
+
+func TestFailedSlotsAreCountedByReason(t *testing.T) {
+	cfg := testConfig(1)
+	cfg.ListenAddress = "127.0.0.1:0"
+	r := newRig(t, cfg)
+	var mu sync.Mutex
+	var clock time.Time
+	r.d.now = func() time.Time {
+		mu.Lock()
+		defer mu.Unlock()
+		clock = clock.Add(time.Hour)
+		return clock
+	}
+	r.api.Session.Info.Statistics = assigned(1)
+	r.start()
+
+	for i := 0; i < 3; i++ {
+		_, g := r.boot(fmt.Sprintf("vm-%d", i))
+		g.exit <- 1
+	}
+	const want = `forgehand_slot_failures_total{reason="runner_exit",scaleset="example"} 3`
+	var body []byte
+	r.wait("three runner_exit failures in /metrics", func() bool {
+		if r.d.metricsAddr == "" {
+			return false
+		}
+		resp, err := http.Get("http://" + r.d.metricsAddr + "/metrics")
+		if err != nil {
+			return false
+		}
+		defer func() { _ = resp.Body.Close() }()
+		body, _ = io.ReadAll(resp.Body)
+		return strings.Contains(string(body), want)
+	})
+}

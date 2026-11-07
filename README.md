@@ -205,6 +205,12 @@ A failed pre-acquire heartbeat removes the instance at once; `failure_threshold`
 With `listen_address` set, forgehand serves Prometheus `/metrics` there. The
 endpoint has no authentication, so bind it to loopback or firewall it.
 
+forgehand adds these, each with a `scaleset` label:
+
+- `forgehand_prepare_failures_total{stage}` counts guests that failed to prepare (`connect_info` or `ready_command`), and `forgehand_prepare_consecutive_failures` is the run since the last that succeeded.
+- `forgehand_admission_refusals_total` counts guest creations the plugin's admission check refused.
+- `forgehand_slot_failures_total{reason}` counts slots that failed: `acquire_timeout`, `acquire`, `runner_start`, `runner_exit` or `listen_timeout`.
+
 ## Contributing
 
 Issues and changes are welcome on either forge:

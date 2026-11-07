@@ -32,7 +32,7 @@ func testConfig() config.Autoscaler {
 	}
 }
 
-func newFleet(t *testing.T, group *dummy.InstanceGroup, opts Options) Fleet {
+func newFleet(t *testing.T, group provider.InstanceGroup, opts Options) Fleet {
 	t.Helper()
 	f, err := New(group, testConfig(), opts, taskscaler.WithAcquireDelay(5*time.Millisecond))
 	if err != nil {
@@ -217,7 +217,7 @@ func TestUpFunc(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := make(chan string, 1)
-			up := upFunc(context.Background(), config.Autoscaler{}, func(id string) { got <- id }, nil)
+			up := upFunc(context.Background(), config.Autoscaler{}, func(id string) { got <- id }, nil, nil)
 			err := up(nil, tt.in)
 			if (err != nil) != tt.reject {
 				t.Fatalf("err = %v, reject = %v", err, tt.reject)

@@ -78,6 +78,9 @@ type Config struct {
 	// Run prefixes the keys of the slots this run spawns, so they never equal
 	// a restored acquisition's. Empty means a random value.
 	Run string
+	// OnSlotFailed is called, under the scaler's lock, with the reason of each
+	// slot that fails toward the breaker.
+	OnSlotFailed func(reason string)
 }
 
 // Scaler implements listener.Scaler. One slot holds one VM for one job.
@@ -296,7 +299,7 @@ func (s *Scaler) evaluate() {
 		switch sl.state {
 		case Acquiring:
 			if now.Sub(sl.since) >= s.cfg.InstanceAcquireTimeout {
-				s.fail(sl, "no instance within instance_acquire_timeout: check the fleeting plugin and host capacity")
+				s.fail(sl, "acquire_timeout", "no instance within instance_acquire_timeout: check the fleeting plugin and host capacity")
 			}
 		case Starting:
 			if !sl.timedOut && now.Sub(sl.since) >= s.cfg.ListenTimeout {
@@ -413,7 +416,7 @@ func (s *Scaler) run(ctx context.Context, sl *slot) {
 		return
 	}
 	if err != nil {
-		s.fail(sl, fmt.Sprintf("acquiring an instance: %v: check the fleeting plugin", err))
+		s.fail(sl, "acquire", fmt.Sprintf("acquiring an instance: %v: check the fleeting plugin", err))
 		s.mu.Unlock()
 		return
 	}
@@ -504,7 +507,7 @@ func (s *Scaler) exited(sl *slot, code int, err error, diag string) {
 				s.occupied(sl)
 				return
 			}
-			s.fail(sl, fmt.Sprintf("starting the runner: %v", err))
+			s.fail(sl, "runner_start", fmt.Sprintf("starting the runner: %v", err))
 			return
 		}
 		s.log.Warn("runner lost", "slot", sl.key, "name", sl.name, "error", err)
@@ -520,9 +523,9 @@ func (s *Scaler) exited(sl *slot, code int, err error, diag string) {
 	}
 	switch sl.state {
 	case Starting:
-		s.fail(sl, "runner exited before it was listening: "+exitCause(code)+diagTail(diag))
+		s.fail(sl, "runner_exit", "runner exited before it was listening: "+exitCause(code)+diagTail(diag))
 	case Listening:
-		s.fail(sl, "runner exited while idle: "+exitCause(code)+diagTail(diag))
+		s.fail(sl, "runner_exit", "runner exited while idle: "+exitCause(code)+diagTail(diag))
 	}
 }
 
@@ -719,7 +722,7 @@ func (s *Scaler) listenTimeout(sl *slot) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if sl.state == Starting {
-		s.fail(sl, "runner not listening within listen_timeout: check the runner log in the guest and the golden's runner pin")
+		s.fail(sl, "listen_timeout", "runner not listening within listen_timeout: check the runner log in the guest and the golden's runner pin")
 		s.evaluate()
 	}
 }
@@ -765,11 +768,14 @@ func (s *Scaler) settled() {
 // fail ends a slot as FAILED and backs spawning off. The fifth failure in a
 // row trips the breaker. A slot that reached an instance may have minted a JIT
 // config, so its registration is removed on a best-effort basis.
-func (s *Scaler) fail(sl *slot, cause string) {
+func (s *Scaler) fail(sl *slot, reason, cause string) {
 	if !s.terminate(sl, Failed) {
 		return
 	}
 	s.failures++
+	if s.cfg.OnSlotFailed != nil {
+		s.cfg.OnSlotFailed(reason)
+	}
 	s.log.Error("slot failed", "slot", sl.key, "runner", sl.name, "cause", cause)
 	s.removeRegistration(sl)
 	s.nextSpawn = s.now().Add(backoffBase << (s.failures - 1))

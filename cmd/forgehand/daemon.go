@@ -136,6 +136,10 @@ func (d *daemon) start(ctx context.Context, cfg config.ScaleSet, metrics prometh
 		d:        d,
 		listened: make(chan struct{}),
 	}
+	onFailed, err := slotFailures(metrics, cfg.Name)
+	if err != nil {
+		return nil, err
+	}
 	sw := sweeper{reg: api, log: log, interval: d.sweepInterval, attempts: d.sweepAttempts}
 	opts := fleet.Options{
 		Logger:     log,
@@ -157,8 +161,26 @@ func (d *daemon) start(ctx context.Context, cfg config.ScaleSet, metrics prometh
 		InstanceAcquireTimeout: time.Duration(cfg.Autoscaler.InstanceAcquireTimeout),
 		Logger:                 log,
 		Now:                    d.now,
+		OnSlotFailed:           onFailed,
 	}, u.sessions, api, u.fleet, d.deps.newRunner(cfg, api, set.ID, log))
 	return u, nil
+}
+
+// slotFailures registers the counter of failed slots by reason and returns the
+// scaler's hook for it. With no registry the hook is nil.
+func slotFailures(reg prometheus.Registerer, scaleset string) (func(string), error) {
+	if reg == nil {
+		return nil, nil
+	}
+	c := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name:        "forgehand_slot_failures_total",
+		Help:        "Slots that failed toward the breaker, by reason",
+		ConstLabels: prometheus.Labels{"scaleset": scaleset},
+	}, []string{"reason"})
+	if err := reg.Register(c); err != nil {
+		return nil, fmt.Errorf("registering metrics: %w", err)
+	}
+	return func(reason string) { c.WithLabelValues(reason).Inc() }, nil
 }
 
 // listen keeps a message session open, recreating it with a doubling delay

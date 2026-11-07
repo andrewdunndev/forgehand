@@ -118,6 +118,13 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 	}
 	gone := newDeletions()
 	group = removeOnHeartbeatFailure{InstanceGroup: group, log: opts.Logger, gone: gone}
+	var obs *observed
+	if opts.Metrics != nil {
+		if obs, err = newObserved(opts.Metrics, prometheus.Labels{"scaleset": opts.Name}); err != nil {
+			return nil, fmt.Errorf("registering metrics: %w", err)
+		}
+		group = observedGroup{InstanceGroup: group, o: obs}
+	}
 
 	log := opts.Logger
 	if log == nil {
@@ -140,7 +147,7 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	tsOpts = append(tsOpts, mapped(cfg, settings, upFunc(ctx, cfg, opts.OnLeftover, rs))...)
+	tsOpts = append(tsOpts, mapped(cfg, settings, upFunc(ctx, cfg, opts.OnLeftover, rs, obs))...)
 	tsOpts = append(tsOpts, extra...)
 	if opts.Logger != nil {
 		tsOpts = append(tsOpts, taskscaler.WithLogger(opts.Logger.Named("taskscaler")))
@@ -296,7 +303,7 @@ func settings(cfg config.Autoscaler) (provider.Settings, error) {
 // An instance restored from storage is kept and its acquisitions are handed to
 // rs. Any other instance that existed at start or appeared out of band carries
 // an unknown runner and job, so it is rejected and deleted.
-func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string), rs *restore) taskscaler.UpFunc {
+func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string), rs *restore, obs *observed) taskscaler.UpFunc {
 	return func(ts taskscaler.Taskscaler, in taskscaler.UpFuncInstance) error {
 		if in.Restored && rs != nil {
 			var adopted []Adopted
@@ -315,6 +322,7 @@ func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string),
 			return fmt.Errorf("instance %s is %s: removing it for safety", in.ID, in.Cause)
 		}
 		if cfg.InstanceReadyCommand == "" {
+			obs.prepared()
 			return nil
 		}
 		err := connector.Run(ctx, in.Info, connector.ConnectorOptions{
@@ -322,8 +330,10 @@ func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string),
 			DialOptions: connector.DialOptions{UseExternalAddr: cfg.ConnectorConfig.UseExternalAddr},
 		})
 		if err != nil {
+			obs.prepareFailed("ready_command")
 			return fmt.Errorf("instance_ready_command: %w", err)
 		}
+		obs.prepared()
 		return nil
 	}
 }
