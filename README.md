@@ -80,7 +80,7 @@ forgehand run -c forgehand.toml
 ```
 
 `check` resolves the plugin, finds the set key files and authenticates the App, then prints `ok`; it creates nothing, starts no VM and leaves `plugin_config` to `run`.
-[`examples/forgehand.service`](examples/forgehand.service) is the user unit of a lingering `forgehand` service user. With the libvirt plugin:
+[`examples/forgehand.service`](examples/forgehand.service) is the user unit of a lingering `forgehand` service user. Use a user unit, not a system unit: on an SELinux host a system service runs confined and cannot reach libvirt without local policy, while the user manager runs it unconfined with the user's `libvirt` group. With the libvirt plugin:
 
 ```
 sudo useradd --system --create-home --home-dir /var/srv/forgehand --groups libvirt forgehand
