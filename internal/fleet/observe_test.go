@@ -164,3 +164,24 @@ func TestLookupAfterPrepareLeavesTheSeriesUntouched(t *testing.T) {
 		t.Errorf("consecutive failures = %v for a guest still preparing, want 1", got)
 	}
 }
+
+type decreaseGroup struct{ provider.InstanceGroup }
+
+func (decreaseGroup) Decrease(_ context.Context, ids []string) ([]string, error) { return ids, nil }
+
+func TestDecreaseForgetsThePreparedGuest(t *testing.T) {
+	obs, err := newObserved(prometheus.NewRegistry(), prometheus.Labels{"scaleset": "set"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := observedGroup{InstanceGroup: decreaseGroup{}, o: obs}
+	obs.prepared("i")
+	if _, err := group.Decrease(context.Background(), []string{"i"}); err != nil {
+		t.Fatal(err)
+	}
+	obs.mu.Lock()
+	defer obs.mu.Unlock()
+	if len(obs.preparedIDs) != 0 {
+		t.Errorf("preparedIDs = %v after the guest was removed, want none", obs.preparedIDs)
+	}
+}

@@ -84,6 +84,18 @@ func (o *observed) adopted(id string) {
 	o.mu.Unlock()
 }
 
+// removed forgets guests the plugin deleted.
+func (o *observed) removed(ids []string) {
+	if o == nil {
+		return
+	}
+	o.mu.Lock()
+	for _, id := range ids {
+		delete(o.preparedIDs, id)
+	}
+	o.mu.Unlock()
+}
+
 // connectFailed counts a failed lookup for a guest still being prepared. A
 // lookup the runner makes after the guest is prepared is not a preparation.
 func (o *observed) connectFailed(id string) {
@@ -118,5 +130,11 @@ func (g observedGroup) Increase(ctx context.Context, n int) (int, error) {
 	if err != nil {
 		g.o.refused(err)
 	}
+	return done, err
+}
+
+func (g observedGroup) Decrease(ctx context.Context, ids []string) ([]string, error) {
+	done, err := g.InstanceGroup.Decrease(ctx, ids)
+	g.o.removed(done)
 	return done, err
 }
