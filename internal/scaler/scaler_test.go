@@ -515,6 +515,7 @@ func TestJitErrorFailsStartingSlot(t *testing.T) {
 	r.fl.Grant(r.fl.Waiting()[0], &fleet.FakeInstance{ID: "vm-1"})
 	r.wantState("vm-1", Failed)
 	r.wantReleased(1)
+	wantReasons(t, r, "runner_start")
 }
 
 func TestFailedSlotRemovesItsRegistration(t *testing.T) {
@@ -545,6 +546,11 @@ func TestBusyRunnerExitWithoutCompletionIsDoneAfterGrace(t *testing.T) {
 		t.Fatalf("slot is %s after the grace, want DONE", got)
 	}
 	r.wantReleased(1)
+	r.rn.mu.Lock()
+	defer r.rn.mu.Unlock()
+	if r.rn.diagCalls != 0 {
+		t.Errorf("a busy runner exit read diagnostics %d times, want none", r.rn.diagCalls)
+	}
 }
 
 func TestBusyExitAndCompletionBothSeenIsDoneAtOnce(t *testing.T) {
@@ -767,6 +773,7 @@ func TestRunnerNeverListeningFailsWithinListenTimeoutAfterDiag(t *testing.T) {
 	r.advance(time.Second)
 	r.wantState("vm-1", Failed)
 	r.wantReleased(1)
+	wantReasons(t, r, "listen_timeout")
 	if r.rn.diagCalls != 1 || r.rn.releasedAt != 0 {
 		t.Fatalf("diag called %d times, with %d releases before it; want once, before the VM went", r.rn.diagCalls, r.rn.releasedAt)
 	}
@@ -1726,5 +1733,23 @@ func TestStartingSlotReachingListeningDuringDrainOrHandoffIsReapedAtOnce(t *test
 		r.wantState("vm-1", Done)
 		r.wantReleased(1)
 		waitHandoff(t, done, "the drain did not return once the slot was reaped")
+	}
+}
+
+type failingFleet struct {
+	fleet.Fleet
+	err error
+}
+
+func (f failingFleet) Acquire(context.Context, string) (fleet.Instance, error) { return nil, f.err }
+
+func TestFleetAcquireErrorFailsSlot(t *testing.T) {
+	r := newRig(t)
+	r.s.fleet = failingFleet{Fleet: r.s.fleet, err: errors.New("plugin gone")}
+	r.assigned(1)
+	r.waitFor("the slot to fail", func() bool { return r.stateOf("slot-1") == Failed })
+	wantReasons(t, r, "acquire")
+	if !strings.Contains(r.logged(), "plugin gone") {
+		t.Errorf("cause not logged:\n%s", r.logged())
 	}
 }
