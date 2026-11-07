@@ -553,6 +553,9 @@ func TestFiveRunnersExitingBeforeTheMarkerEndRunNamingTheCause(t *testing.T) {
 	if !strings.Contains(err.Error(), "5 consecutive slots failed") || !strings.Contains(err.Error(), `scaleset "example"`) {
 		t.Fatalf("error does not name the cause: %v", err)
 	}
+	if got := r.notified(); !slices.Contains(got, "STOPPING=1\nSTATUS=stopping") {
+		t.Errorf("notified %q, want STOPPING when the breaker trips", got)
+	}
 }
 
 func TestOccupiedRunnerNameKeepsDaemonUpUntilItClears(t *testing.T) {
@@ -1143,5 +1146,14 @@ func TestSIGUSR1IgnoredWithoutStaticCredentialsAnnouncesNoStopping(t *testing.T)
 	}
 	if got := r.notified(); got[len(got)-1] != "STOPPING=1\nSTATUS=stopping" {
 		t.Errorf("notified %q, want STOPPING last after SIGTERM", got)
+	}
+}
+
+func TestReadyIsNotSentAfterStopping(t *testing.T) {
+	r := newRig(t, testConfig(5))
+	r.d.announceStopping("stopping")
+	r.d.announceReady(context.Background(), nil)
+	if got := r.notified(); !slices.Equal(got, []string{"STOPPING=1\nSTATUS=stopping"}) {
+		t.Errorf("notified %q, want STOPPING alone", got)
 	}
 }
