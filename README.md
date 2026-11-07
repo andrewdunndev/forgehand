@@ -41,6 +41,7 @@ configuration may still change in a minor release; the release notes say how.
 - A guest image with:
   - POSIX `sh` and `setsid`
   - [actions/runner](https://github.com/actions/runner) unpacked at `runner.dir`, writable by `connector_config.username`
+  - The runner's .NET runtime libraries, including `libssl.so.3`: on Fedora 45 and later that is `openssl3-libs`, not `openssl-libs`
   - SSH reachable from the host as `connector_config.username`; the plugin
     generates the key pair itself. Set `use_static_credentials = true` with
     `key_path` (read at start) to survive a daemon restart: the image must trust the matching public key, because nothing is seeded
