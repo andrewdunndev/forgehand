@@ -1,10 +1,16 @@
 package runner
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -416,5 +422,68 @@ func TestAttachRedialsWhenTheSessionDrops(t *testing.T) {
 	}
 	if n := len(tg.all()); n != 4 {
 		t.Errorf("sessions = %d, want probe, follow, probe, follow", n)
+	}
+}
+
+func TestDiagKeepsTheDiagTailAtDebug(t *testing.T) {
+	const marker = "AUTH-DETAIL-MARKER"
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "_diag"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"runner.log":            "listener started\n",
+		"_diag/Runner_2026.log": "response header " + marker + "\n",
+	} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	useTarget(t, func(_ int, ctx context.Context, o connector.RunOptions) error {
+		cmd := exec.CommandContext(ctx, "sh", "-c", o.Command)
+		cmd.Stdout = o.Stdout
+		return cmd.Run()
+	})
+
+	diag := func(level hclog.Level) (string, []map[string]any) {
+		var buf bytes.Buffer
+		log := hclog.New(&hclog.LoggerOptions{Output: &buf, Level: level, JSONFormat: true})
+		r := New(config.Runner{Dir: dir}, false, github.NewFake(), 7, log)
+		got := r.Diag(context.Background(), &fleet.FakeInstance{ID: "vm-1"})
+		var lines []map[string]any
+		for _, l := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+			if l == "" {
+				continue
+			}
+			var m map[string]any
+			if err := json.Unmarshal([]byte(l), &m); err != nil {
+				t.Fatal(err)
+			}
+			lines = append(lines, m)
+		}
+		return got, lines
+	}
+
+	for _, level := range []hclog.Level{hclog.Info, hclog.Debug} {
+		got, lines := diag(level)
+		if !strings.Contains(got, "listener started") {
+			t.Errorf("level %v: diag = %q, want the runner.log tail", level, got)
+		}
+		if strings.Contains(got, marker) {
+			t.Errorf("level %v: diag returned for Warn and the fail cause carries the _diag tail: %q", level, got)
+		}
+		var atDebug bool
+		for _, m := range lines {
+			if !strings.Contains(fmt.Sprint(m), marker) {
+				continue
+			}
+			if m["@level"] != "debug" {
+				t.Errorf("level %v: _diag tail logged at %v", level, m["@level"])
+			}
+			atDebug = true
+		}
+		if want := level == hclog.Debug; atDebug != want {
+			t.Errorf("level %v: _diag tail logged = %v, want %v", level, atDebug, want)
+		}
 	}
 }

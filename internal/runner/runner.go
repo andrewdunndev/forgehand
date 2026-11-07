@@ -120,11 +120,18 @@ func (r *Runner) follow(ctx context.Context, inst fleet.Instance, name string, h
 	}
 }
 
-// Diag returns the tail of the runner's logs on inst.
+// Diag returns the tail of the runner log on inst. The runner's _diag tail
+// carries HTTP and auth detail, so it is logged at Debug and never returned.
 func (r *Runner) Diag(ctx context.Context, inst fleet.Instance) string {
 	var out limitedBuffer
 	if _, err := r.session(ctx, inst, diagScript(r.dir), nil, &out); err != nil {
 		return fmt.Sprintf("diagnostics unavailable: %v", err)
+	}
+	if r.log.IsDebug() {
+		var detail limitedBuffer
+		if _, err := r.session(ctx, inst, detailScript(r.dir), nil, &detail); err == nil {
+			r.log.Debug("runner _diag tail", "detail", detail.String())
+		}
 	}
 	return out.String()
 }
@@ -259,6 +266,11 @@ fi
 func diagScript(dir string) string {
 	return fmt.Sprintf(`cd %s || exit 1
 tail -n 40 runner.log 2>/dev/null
+`, quote(dir))
+}
+
+func detailScript(dir string) string {
+	return fmt.Sprintf(`cd %s || exit 1
 for f in $(ls -t _diag/Runner_*.log 2>/dev/null | head -n 1); do tail -n 40 "$f"; done
 `, quote(dir))
 }
