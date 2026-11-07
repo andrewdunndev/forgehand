@@ -792,6 +792,11 @@ func TestRunnerExitBeforeListeningLogsDiagBeforeTheVMGoes(t *testing.T) {
 			t.Fatalf("log lacks %q:\n%s", want, out)
 		}
 	}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "runner exited:") && !strings.Contains(line, "[WARN]") {
+			t.Errorf("the runner exit is not a warning: %s", line)
+		}
+	}
 }
 
 func TestAcquireTimeoutFailsSlot(t *testing.T) {
