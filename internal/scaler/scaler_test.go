@@ -895,6 +895,23 @@ func TestDrainCancelsAcquiringSlotsAndStopsSpawning(t *testing.T) {
 	}
 }
 
+func TestStopCountsTheSlotsADrainCancelledWhileWaitingForAVM(t *testing.T) {
+	r := newRig(t)
+	r.assigned(2)
+	r.waitFor("blocked Acquires", func() bool { return len(r.fl.Waiting()) == 2 })
+	if err := r.s.Drain(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := r.s.Stop(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if out := r.logged(); !strings.Contains(out, "waiting_for_vm=2 busy=0") {
+		t.Fatalf("stop did not count the two guests the drain cancelled:\n%s", out)
+	}
+}
+
 func TestStopCancelsEverySlotWithinTheBound(t *testing.T) {
 	r := newRig(t)
 	r.assigned(2)

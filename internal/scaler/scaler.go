@@ -102,6 +102,7 @@ type Scaler struct {
 	restoring bool
 	draining  bool
 	handoff   bool
+	drainCut  int
 	stopped   bool
 	drained   chan struct{}
 	wg        sync.WaitGroup
@@ -222,6 +223,7 @@ func (s *Scaler) drain(ctx context.Context, handoff bool) error {
 	for _, sl := range s.slots {
 		switch sl.state {
 		case Acquiring:
+			s.drainCut++
 			s.terminate(sl, Cancelled)
 		case Listening:
 			s.toReaping(sl)
@@ -245,7 +247,7 @@ func (s *Scaler) Stop(ctx context.Context) error {
 	s.mu.Lock()
 	s.stopped = true
 	var registered []string
-	var waiting, busy int
+	waiting, busy := s.drainCut, 0
 	for _, sl := range s.slots {
 		switch sl.state {
 		case Acquiring:
