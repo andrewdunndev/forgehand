@@ -153,6 +153,10 @@ cosign verify-blob forgehand-linux-amd64 --bundle forgehand-linux-amd64.bundle \
   included.
 - A crash (`SIGKILL`) leaves the VMs and their runners running; see Restart.
 
+Under `Type=notify`, as the example unit sets, forgehand sends `READY=1` once every
+scale set holds a message session, and `STOPPING=1` when a drain, handoff or stop begins.
+Without `NOTIFY_SOCKET` it sends nothing.
+
 ## Restart
 
 With `use_static_credentials = true`, forgehand keeps its autoscaler state in

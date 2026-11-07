@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -41,6 +42,7 @@ type deps struct {
 	lookPlugin func(plugin string) (string, error)
 	startFleet func(config.Autoscaler, fleet.Options) (fleet.Fleet, error)
 	newRunner  func(cfg config.ScaleSet, api github.API, scaleSetID int, log hclog.Logger) scaler.Runner
+	notify     func(state string) error
 }
 
 func realDeps() deps {
@@ -50,6 +52,7 @@ func realDeps() deps {
 		newAPI:     func(c config.ScaleSet) (github.API, error) { return github.New(c, version()) },
 		lookPlugin: fleet.LookPath,
 		startFleet: fleet.Start,
+		notify:     sdNotify,
 		newRunner: func(c config.ScaleSet, api github.API, id int, log hclog.Logger) scaler.Runner {
 			return runner.New(c.Runner, c.Autoscaler.ConnectorConfig.UseExternalAddr, api, id, log.Named("runner"))
 		},
@@ -67,6 +70,9 @@ type daemon struct {
 	metricsAddr                string
 	metricsSrv                 *http.Server
 	now                        func() time.Time
+
+	notifyMu      sync.Mutex
+	notifyStopped bool
 }
 
 func newDaemon(cfg *config.Config, d deps, log hclog.Logger) *daemon {
@@ -101,17 +107,19 @@ func (s *sessions) AcquireJobs(ctx context.Context, ids []int64) ([]int64, error
 
 // unit is one scale set: its GitHub session, scaler and fleet.
 type unit struct {
-	name     string
-	owner    string
-	cfg      config.ScaleSet
-	api      github.API
-	set      *scaleset.RunnerScaleSet
-	sessions *sessions
-	fleet    fleet.Fleet
-	scaler   *scaler.Scaler
-	log      hclog.Logger
-	d        *daemon
-	listened chan struct{}
+	name        string
+	owner       string
+	cfg         config.ScaleSet
+	api         github.API
+	set         *scaleset.RunnerScaleSet
+	sessions    *sessions
+	fleet       fleet.Fleet
+	scaler      *scaler.Scaler
+	log         hclog.Logger
+	d           *daemon
+	listened    chan struct{}
+	connected   chan struct{}
+	connectOnce sync.Once
 }
 
 func (d *daemon) start(ctx context.Context, cfg config.ScaleSet, metrics prometheus.Registerer) (*unit, error) {
@@ -126,15 +134,16 @@ func (d *daemon) start(ctx context.Context, cfg config.ScaleSet, metrics prometh
 	}
 
 	u := &unit{
-		name:     cfg.Name,
-		owner:    d.deps.hostname + "-" + cfg.Name,
-		cfg:      cfg,
-		api:      api,
-		set:      set,
-		sessions: &sessions{},
-		log:      log,
-		d:        d,
-		listened: make(chan struct{}),
+		name:      cfg.Name,
+		owner:     d.deps.hostname + "-" + cfg.Name,
+		cfg:       cfg,
+		api:       api,
+		set:       set,
+		sessions:  &sessions{},
+		log:       log,
+		d:         d,
+		listened:  make(chan struct{}),
+		connected: make(chan struct{}),
 	}
 	onFailed, err := slotFailures(metrics, cfg.Name)
 	if err != nil {
@@ -218,6 +227,7 @@ func (u *unit) listenOnce(ctx context.Context) error {
 		_ = sess.Close(cctx)
 	}()
 	u.sessions.set(sess)
+	u.connectOnce.Do(func() { close(u.connected) })
 
 	l, err := listener.New(sess, listener.Config{ScaleSetID: u.set.ID, MaxRunners: u.cfg.Autoscaler.MaxInstances})
 	if err != nil {
@@ -253,6 +263,7 @@ func (d *daemon) run(ctx context.Context, sigs <-chan os.Signal) error {
 		u, interrupted, err := d.starting(ctx, s, metrics, sigs, cancel)
 		if interrupted != nil {
 			d.log.Info("signal received during startup", "signal", interrupted)
+			d.announceStopping("stopping")
 			if u != nil {
 				units = append(units, u)
 			}
@@ -273,17 +284,21 @@ func (d *daemon) run(ctx context.Context, sigs <-chan os.Signal) error {
 		}()
 	}
 
+	go d.announceReady(ctx, slices.Clone(units))
+
 	handoff := false
 wait:
 	for {
 		select {
 		case err = <-fatal:
 			d.log.Error("stopping", "error", err)
+			d.announceStopping("stopping")
 			break wait
 		case sig := <-sigs:
 			d.log.Info("signal received", "signal", sig)
 			switch sig {
 			case syscall.SIGQUIT:
+				d.announceStopping("draining")
 				_, err = d.drain(units, sigs, fatal, false)
 				break wait
 			case syscall.SIGUSR1:
@@ -291,11 +306,13 @@ wait:
 					d.log.Error("ignoring SIGUSR1: handing off needs use_static_credentials on every scale set")
 					continue
 				}
+				d.announceStopping("handing off")
 				var forced bool
 				forced, err = d.drain(units, sigs, fatal, true)
 				handoff = !forced
 				break wait
 			default:
+				d.announceStopping("stopping")
 				break wait
 			}
 		}
@@ -308,6 +325,44 @@ wait:
 		err = stopErr
 	}
 	return err
+}
+
+// announceReady tells the service manager the daemon is up once every scale set
+// holds a message session, so a unit that cannot reach GitHub never reads as
+// started.
+func (d *daemon) announceReady(ctx context.Context, units []*unit) {
+	for _, u := range units {
+		select {
+		case <-u.connected:
+		case <-ctx.Done():
+			return
+		}
+	}
+	d.notifyState(false, fmt.Sprintf("serving %d scale sets", len(units)))
+}
+
+// announceStopping tells the service manager the daemon is leaving, so the
+// unit reads as deactivating for as long as a drain takes.
+func (d *daemon) announceStopping(status string) {
+	d.notifyState(true, status)
+}
+
+func (d *daemon) notifyState(stopping bool, status string) {
+	if d.deps.notify == nil {
+		return
+	}
+	d.notifyMu.Lock()
+	defer d.notifyMu.Unlock()
+	state := "READY=1\nSTATUS=" + status
+	if stopping {
+		d.notifyStopped = true
+		state = "STOPPING=1\nSTATUS=" + status
+	} else if d.notifyStopped {
+		return
+	}
+	if err := d.deps.notify(state); err != nil {
+		d.log.Warn("notifying the service manager", "error", err)
+	}
 }
 
 // starting runs start while watching for a signal. A signal cancels the start

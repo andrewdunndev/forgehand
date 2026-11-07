@@ -8,6 +8,11 @@ StartLimitIntervalSec=10min
 StartLimitBurst=5
 
 [Service]
+# READY=1 comes once every scale set holds a message session. A start that gets
+# no further is killed at TimeoutStartSec and restarted, so a crash loop never
+# reads as active, and a drain or handoff reads as deactivating.
+Type=notify
+TimeoutStartSec=10min
 ExecStart=/usr/local/bin/forgehand run -c %h/.config/forgehand/forgehand.toml
 Restart=on-failure
 RestartSec=5s

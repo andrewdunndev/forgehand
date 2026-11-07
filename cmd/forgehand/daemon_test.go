@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -122,6 +123,13 @@ type rig struct {
 	mu      sync.Mutex
 	started int
 	opts    fleet.Options
+	notes   []string
+}
+
+func (r *rig) notified() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.notes)
 }
 
 func newRig(t *testing.T, cfg *config.Config) *rig {
@@ -148,6 +156,12 @@ func newRig(t *testing.T, cfg *config.Config) *rig {
 			return r.fl, nil
 		},
 		newRunner: func(config.ScaleSet, github.API, int, hclog.Logger) scaler.Runner { return r.guest },
+		notify: func(state string) error {
+			r.mu.Lock()
+			defer r.mu.Unlock()
+			r.notes = append(r.notes, state)
+			return nil
+		},
 	}, log)
 	r.d.reconnectMin, r.d.reconnectMax = time.Millisecond, 4*time.Millisecond
 	r.d.sweepInterval = time.Millisecond
@@ -1052,4 +1066,82 @@ func TestFailedSlotsAreCountedByReason(t *testing.T) {
 		body, _ = io.ReadAll(resp.Body)
 		return strings.Contains(string(body), want)
 	})
+}
+
+const (
+	readyNote    = "READY=1\nSTATUS=serving 1 scale sets"
+	drainingNote = "STOPPING=1\nSTATUS=draining"
+	handoffNote  = "STOPPING=1\nSTATUS=handing off"
+)
+
+func TestReadyWaitsForTheFirstMessageSession(t *testing.T) {
+	r := newRig(t, testConfig(5))
+	r.api.SetSessionErr(errors.New("github unreachable"))
+	r.start()
+
+	r.wait("three failed session attempts", func() bool { return r.sessions() >= 3 })
+	if notes := r.notified(); len(notes) != 0 {
+		t.Fatalf("notified %q while no session could be created", notes)
+	}
+	r.api.SetSessionErr(nil)
+	r.wait("READY once a session exists", func() bool { return slices.Contains(r.notified(), readyNote) })
+	if notes := r.notified(); len(notes) != 1 {
+		t.Errorf("notified %q, want READY once", notes)
+	}
+}
+
+func TestStoppingIsAnnouncedAtTheStartOfADrainAndAHandoff(t *testing.T) {
+	for _, c := range []struct {
+		sig  syscall.Signal
+		want string
+	}{
+		{syscall.SIGQUIT, drainingNote},
+		{syscall.SIGUSR1, handoffNote},
+	} {
+		t.Run(c.sig.String(), func(t *testing.T) {
+			t.Setenv("STATE_DIRECTORY", t.TempDir())
+			cfg := testConfig(5)
+			cfg.ScaleSets[0].Autoscaler.ConnectorConfig.UseStaticCredentials = true
+			r := newRig(t, cfg)
+			r.api.Session.Info.Statistics = assigned(1)
+			r.start()
+			_, g := r.boot("vm-a")
+			g.hooks.Listening()
+			g.hooks.RunningJob()
+			r.wait("READY", func() bool { return slices.Contains(r.notified(), readyNote) })
+
+			r.sigs <- c.sig
+			r.wait("STOPPING while the job still runs", func() bool { return slices.Contains(r.notified(), c.want) })
+			if got := r.notified(); got[len(got)-1] != c.want {
+				t.Errorf("notified %q, want %q last", got, c.want)
+			}
+			if c.sig == syscall.SIGQUIT {
+				if err, ok := r.result(100 * time.Millisecond); ok {
+					t.Fatalf("run returned (%v) while a job was running", err)
+				}
+				r.sigs <- syscall.SIGTERM
+			}
+			if _, ok := r.result(5 * time.Second); !ok {
+				t.Fatal("run did not return")
+			}
+		})
+	}
+}
+
+func TestSIGUSR1IgnoredWithoutStaticCredentialsAnnouncesNoStopping(t *testing.T) {
+	r := newRig(t, testConfig(5))
+	r.start()
+	r.wait("READY", func() bool { return slices.Contains(r.notified(), readyNote) })
+	r.sigs <- syscall.SIGUSR1
+	r.wait("the ignored signal logged", func() bool { return strings.Contains(r.out.String(), "ignoring SIGUSR1") })
+	if got := r.notified(); len(got) != 1 {
+		t.Errorf("notified %q, want READY alone", got)
+	}
+	r.sigs <- syscall.SIGTERM
+	if _, ok := r.result(5 * time.Second); !ok {
+		t.Fatal("run did not stop on SIGTERM")
+	}
+	if got := r.notified(); got[len(got)-1] != "STOPPING=1\nSTATUS=stopping" {
+		t.Errorf("notified %q, want STOPPING last after SIGTERM", got)
+	}
 }

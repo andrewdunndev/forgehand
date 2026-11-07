@@ -21,6 +21,7 @@ type Fake struct {
 
 	GetScaleSetErr error
 	RemoveErr      error
+	SessionErr     error
 	JitErr         error
 	// RejectDuplicates makes a JIT mint fail with RunnerExistsError while
 	// the name is registered.
@@ -68,6 +69,9 @@ func (f *Fake) MessageSessionClient(_ context.Context, _ int, owner string) (Ses
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Owners = append(f.Owners, owner)
+	if f.SessionErr != nil {
+		return nil, f.SessionErr
+	}
 	return f.Session, nil
 }
 
@@ -217,6 +221,13 @@ func (f *Fake) SetRemoveErr(err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.RemoveErr = err
+}
+
+// SetSessionErr makes MessageSessionClient fail with err until it is set to nil.
+func (f *Fake) SetSessionErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.SessionErr = err
 }
 
 func (s *FakeSession) IsClosed() bool {
