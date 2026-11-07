@@ -199,8 +199,9 @@ systemctl --user start forgehand
 
 The old process removes idle runners and exits once the VMs of the removed runners are deleted, leaving the VMs of
 running jobs for the new one to adopt as in Restart. `--kill-whom=main` keeps the signal off
-the plugin child. With generated credentials `SIGUSR1` is ignored: drain with
-`SIGQUIT` (`systemctl --user stop`) and wait for the jobs instead.
+the plugin child. With generated credentials `SIGUSR1` is ignored. Replace the binary, then
+`systemctl --user restart --no-block forgehand`: the unit's `KillSignal=SIGQUIT` drains, so the new binary
+starts once the jobs end. `--no-block` returns at once, and the unit reads `deactivating` until then.
 
 ## Instance health
 
