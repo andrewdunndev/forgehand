@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +28,7 @@ const (
 	breakerLimit    = 5
 	reapTimeout     = 30 * time.Second
 	diagTimeout     = 10 * time.Second
+	diagTailLines   = 3
 	slotHistory     = 256
 	tickInterval    = time.Second
 )
@@ -420,8 +422,12 @@ func (s *Scaler) run(ctx context.Context, sl *slot) {
 	s.mu.Unlock()
 
 	code, err := s.runner.Run(ctx, inst, sl.name, s.hooks(sl))
+	var diag string
+	if err == nil && code != 0 && s.awaitingExit(sl) {
+		diag = s.exitDiag(sl)
+	}
 	s.locked(func() {
-		s.exited(sl, code, err)
+		s.exited(sl, code, err, diag)
 		s.evaluate()
 	})
 }
@@ -456,7 +462,37 @@ func (s *Scaler) running(sl *slot) {
 	s.log.Debug("ignoring running-job marker", "slot", sl.key, "state", sl.state)
 }
 
-func (s *Scaler) exited(sl *slot, code int, err error) {
+// awaitingExit reports whether a runner exit would fail sl, so its VM is worth
+// reading before it goes.
+func (s *Scaler) awaitingExit(sl *slot) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return sl.state == Starting || sl.state == Listening
+}
+
+// exitDiag logs the runner's diagnostics while its VM still exists, and
+// returns them.
+func (s *Scaler) exitDiag(sl *slot) string {
+	ctx, cancel := context.WithTimeout(context.Background(), diagTimeout)
+	defer cancel()
+	diag := s.runner.Diag(ctx, sl.inst)
+	s.log.Warn("runner exited", "slot", sl.key, "runner", sl.name, "diag", diag)
+	return diag
+}
+
+// diagTail renders the last lines of diag for a failure cause.
+func diagTail(diag string) string {
+	lines := strings.Split(strings.TrimSpace(diag), "\n")
+	if len(lines) > diagTailLines {
+		lines = lines[len(lines)-diagTailLines:]
+	}
+	if tail := strings.Join(lines, " | "); tail != "" {
+		return ": " + tail
+	}
+	return ""
+}
+
+func (s *Scaler) exited(sl *slot, code int, err error, diag string) {
 	if sl.state.Terminal() {
 		return
 	}
@@ -482,9 +518,9 @@ func (s *Scaler) exited(sl *slot, code int, err error) {
 	}
 	switch sl.state {
 	case Starting:
-		s.fail(sl, "runner exited before it was listening: "+exitCause(code))
+		s.fail(sl, "runner exited before it was listening: "+exitCause(code)+diagTail(diag))
 	case Listening:
-		s.fail(sl, "runner exited while idle: "+exitCause(code))
+		s.fail(sl, "runner exited while idle: "+exitCause(code)+diagTail(diag))
 	}
 }
 

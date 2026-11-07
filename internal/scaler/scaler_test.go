@@ -753,6 +753,25 @@ func TestRunnerNeverListeningFailsWithinListenTimeoutAfterDiag(t *testing.T) {
 	}
 }
 
+func TestRunnerExitBeforeListeningLogsDiagBeforeTheVMGoes(t *testing.T) {
+	r := newRig(t)
+	r.rn.diag = "one\ntwo\nthree\nRunner connect error: 401\nlast line"
+	r.assigned(1)
+	r.boot("vm-1")
+	r.exit("vm-1", 2)
+	r.wantState("vm-1", Failed)
+	r.wantReleased(1)
+	if r.rn.diagCalls != 1 || r.rn.releasedAt != 0 {
+		t.Fatalf("diag called %d times, with %d releases before it; want once, before the VM went", r.rn.diagCalls, r.rn.releasedAt)
+	}
+	out := r.logged()
+	for _, want := range []string{"runner exited", "Runner connect error: 401", "cause=\"runner exited before it was listening: exit code 2: check the runner log in the guest: three | Runner connect error: 401 | last line\""} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("log lacks %q:\n%s", want, out)
+		}
+	}
+}
+
 func TestAcquireTimeoutFailsSlot(t *testing.T) {
 	r := newRig(t)
 	r.assigned(1)
