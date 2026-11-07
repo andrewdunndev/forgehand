@@ -313,6 +313,7 @@ func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string),
 				}
 			}
 			rs.up(in.ID, adopted)
+			obs.adopted(in.ID)
 			return nil
 		}
 		if in.Cause == fleeting.CausePreexisted || in.Cause == fleeting.CauseUnexpected || len(in.Acquisitions) > 0 {
@@ -322,7 +323,7 @@ func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string),
 			return fmt.Errorf("instance %s is %s: removing it for safety", in.ID, in.Cause)
 		}
 		if cfg.InstanceReadyCommand == "" {
-			obs.prepared()
+			obs.prepared(in.ID)
 			return nil
 		}
 		err := connector.Run(ctx, in.Info, connector.ConnectorOptions{
@@ -333,7 +334,7 @@ func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string),
 			obs.prepareFailed("ready_command")
 			return fmt.Errorf("instance_ready_command: %w", err)
 		}
-		obs.prepared()
+		obs.prepared(in.ID)
 		return nil
 	}
 }

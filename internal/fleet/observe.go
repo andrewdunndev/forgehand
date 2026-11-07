@@ -3,6 +3,7 @@ package fleet
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"gitlab.com/gitlab-org/fleeting/fleeting/provider"
@@ -19,10 +20,14 @@ type observed struct {
 	prepareFailures *prometheus.CounterVec
 	consecutive     prometheus.Gauge
 	refusals        prometheus.Counter
+
+	mu          sync.Mutex
+	preparedIDs map[string]bool
 }
 
 func newObserved(reg prometheus.Registerer, labels prometheus.Labels) (*observed, error) {
 	o := &observed{
+		preparedIDs: map[string]bool{},
 		prepareFailures: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name:        "forgehand_prepare_failures_total",
 			Help:        "Guests that failed to prepare, by stage: connect_info or ready_command",
@@ -61,9 +66,35 @@ func (o *observed) refused(err error) {
 	}
 }
 
-func (o *observed) prepared() {
-	if o != nil {
-		o.consecutive.Set(0)
+func (o *observed) prepared(id string) {
+	if o == nil {
+		return
+	}
+	o.adopted(id)
+	o.consecutive.Set(0)
+}
+
+// adopted records a guest whose later lookups are not preparations.
+func (o *observed) adopted(id string) {
+	if o == nil {
+		return
+	}
+	o.mu.Lock()
+	o.preparedIDs[id] = true
+	o.mu.Unlock()
+}
+
+// connectFailed counts a failed lookup for a guest still being prepared. A
+// lookup the runner makes after the guest is prepared is not a preparation.
+func (o *observed) connectFailed(id string) {
+	if o == nil {
+		return
+	}
+	o.mu.Lock()
+	done := o.preparedIDs[id]
+	o.mu.Unlock()
+	if !done {
+		o.prepareFailed("connect_info")
 	}
 }
 
@@ -77,7 +108,7 @@ type observedGroup struct {
 func (g observedGroup) ConnectInfo(ctx context.Context, id string) (provider.ConnectInfo, error) {
 	info, err := g.InstanceGroup.ConnectInfo(ctx, id)
 	if err != nil && ctx.Err() == nil {
-		g.o.prepareFailed("connect_info")
+		g.o.connectFailed(id)
 	}
 	return info, err
 }

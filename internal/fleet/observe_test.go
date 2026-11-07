@@ -135,3 +135,31 @@ func TestAdmissionRefusalsAreCounted(t *testing.T) {
 		t.Errorf("admission refusals = %v, want 1", got)
 	}
 }
+
+func TestLookupAfterPrepareLeavesTheSeriesUntouched(t *testing.T) {
+	reg := prometheus.NewRegistry()
+	obs, err := newObserved(reg, prometheus.Labels{"scaleset": "set"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	group := observedGroup{InstanceGroup: &connectGroup{InstanceGroup: &dummy.InstanceGroup{MaxSize: 1}, failures: 100}, o: obs}
+	up := upFunc(context.Background(), config.Autoscaler{}, nil, nil, obs)
+	if err := up(nil, taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseRequested}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := group.ConnectInfo(context.Background(), "i"); err == nil {
+		t.Fatal("the lookup must fail")
+	}
+	if got := metric(t, reg, "forgehand_prepare_failures_total", map[string]string{"stage": "connect_info"}); got > 0 {
+		t.Errorf("connect_info failures = %v after the guest prepared, want none", got)
+	}
+	if got := metric(t, reg, "forgehand_prepare_consecutive_failures", nil); got != 0 {
+		t.Errorf("consecutive failures = %v after the guest prepared, want 0", got)
+	}
+	if _, err := group.ConnectInfo(context.Background(), "other"); err == nil {
+		t.Fatal("the lookup must fail")
+	}
+	if got := metric(t, reg, "forgehand_prepare_consecutive_failures", nil); got != 1 {
+		t.Errorf("consecutive failures = %v for a guest still preparing, want 1", got)
+	}
+}
