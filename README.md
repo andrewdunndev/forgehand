@@ -94,7 +94,7 @@ sudo -u forgehand /usr/local/bin/forgehand check -c ~forgehand/.config/forgehand
 sudo -u forgehand XDG_RUNTIME_DIR=/run/user/$(id -u forgehand) systemctl --user enable --now forgehand
 ```
 
-A user manager reads its user's groups when it starts. If `forgehand` joined `libvirt` after the manager was running, restart it with `systemctl restart user@$(id -u forgehand).service`; until then the plugin reports permission denied on the socket and the journal shows `Cannot find start time for pid`.
+A user manager reads its user's groups when it starts. If `forgehand` joined `libvirt` after the manager was running, restart it with `systemctl restart user@$(id -u forgehand).service`; until then the plugin reports permission denied on the socket.
 
 Run `systemctl --user` and `journalctl --user` with that `sudo -u forgehand XDG_RUNTIME_DIR=...` prefix. With `UMask=0077`, create a plugin `lock_file` shared with other accounts beforehand, with its mode.
 
