@@ -70,6 +70,8 @@ Or build from source with `mise install && just build`, which writes
 set to the directory the unit sets (the plugin's README has its install line),
 or set `plugin` to a binary path.
 
+A service user other than the plugin's installer needs `go+rX` on the plugin directory, since a restrictive umask leaves it `0700`. On an SELinux host a directory made by hand for the binary starts as `usr_t`; `restorecon -RF` on it gives `bin_t`.
+
 ## Quickstart
 
 ```
