@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/prometheus/client_golang/prometheus"
 	"gitlab.com/gitlab-org/fleeting/fleeting"
 	"gitlab.com/gitlab-org/fleeting/fleeting/plugin/fleeting-plugin-dummy"
@@ -84,7 +85,7 @@ func TestPreparedGuestResetsTheConsecutiveCount(t *testing.T) {
 	}
 	obs.prepareFailed("connect_info")
 	obs.prepareFailed("connect_info")
-	up := upFunc(context.Background(), config.Autoscaler{}, nil, nil, obs)
+	up := upFunc(context.Background(), config.Autoscaler{}, hclog.NewNullLogger(), nil, nil, obs)
 	if err := up(nil, taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseRequested}); err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +100,7 @@ func TestReadyCommandFailureIsCounted(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	up := upFunc(context.Background(), config.Autoscaler{InstanceReadyCommand: "true"}, nil, nil, obs)
+	up := upFunc(context.Background(), config.Autoscaler{InstanceReadyCommand: "true"}, hclog.NewNullLogger(), nil, nil, obs)
 	in := taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseRequested}
 	if err := up(nil, in); err == nil {
 		t.Fatal("a ready command with no address to reach must fail")
@@ -143,7 +144,7 @@ func TestLookupAfterPrepareLeavesTheSeriesUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 	group := observedGroup{InstanceGroup: &connectGroup{InstanceGroup: &dummy.InstanceGroup{MaxSize: 1}, failures: 100}, o: obs}
-	up := upFunc(context.Background(), config.Autoscaler{}, nil, nil, obs)
+	up := upFunc(context.Background(), config.Autoscaler{}, hclog.NewNullLogger(), nil, nil, obs)
 	if err := up(nil, taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseRequested}); err != nil {
 		t.Fatal(err)
 	}

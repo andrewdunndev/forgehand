@@ -147,7 +147,7 @@ func build(group provider.InstanceGroup, cfg config.Autoscaler, opts Options, ki
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
-	tsOpts = append(tsOpts, mapped(cfg, settings, upFunc(ctx, cfg, opts.OnLeftover, rs, obs))...)
+	tsOpts = append(tsOpts, mapped(cfg, settings, upFunc(ctx, cfg, log, opts.OnLeftover, rs, obs))...)
 	tsOpts = append(tsOpts, extra...)
 	if opts.Logger != nil {
 		tsOpts = append(tsOpts, taskscaler.WithLogger(opts.Logger.Named("taskscaler")))
@@ -303,7 +303,7 @@ func settings(cfg config.Autoscaler) (provider.Settings, error) {
 // An instance restored from storage is kept and its acquisitions are handed to
 // rs. Any other instance that existed at start or appeared out of band carries
 // an unknown runner and job, so it is rejected and deleted.
-func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string), rs *restore, obs *observed) taskscaler.UpFunc {
+func upFunc(ctx context.Context, cfg config.Autoscaler, log hclog.Logger, onLeftover func(string), rs *restore, obs *observed) taskscaler.UpFunc {
 	return func(ts taskscaler.Taskscaler, in taskscaler.UpFuncInstance) error {
 		if in.Restored && rs != nil {
 			var adopted []Adopted
@@ -317,6 +317,7 @@ func upFunc(ctx context.Context, cfg config.Autoscaler, onLeftover func(string),
 			return nil
 		}
 		if in.Cause == fleeting.CausePreexisted || in.Cause == fleeting.CauseUnexpected || len(in.Acquisitions) > 0 {
+			log.Warn("removing a leftover instance", "instance", in.ID, "cause", in.Cause)
 			if onLeftover != nil {
 				go onLeftover(in.ID)
 			}

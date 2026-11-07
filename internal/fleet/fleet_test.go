@@ -1,6 +1,7 @@
 package fleet
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
 	"github.com/prometheus/client_golang/prometheus"
 	"gitlab.com/gitlab-org/fleeting/fleeting"
 	"gitlab.com/gitlab-org/fleeting/fleeting/plugin/fleeting-plugin-dummy"
@@ -217,7 +219,7 @@ func TestUpFunc(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := make(chan string, 1)
-			up := upFunc(context.Background(), config.Autoscaler{}, func(id string) { got <- id }, nil, nil)
+			up := upFunc(context.Background(), config.Autoscaler{}, hclog.NewNullLogger(), func(id string) { got <- id }, nil, nil)
 			err := up(nil, tt.in)
 			if (err != nil) != tt.reject {
 				t.Fatalf("err = %v, reject = %v", err, tt.reject)
@@ -591,5 +593,18 @@ func TestWaitDeletedEndsWithTheContextWhileADeletionIsPending(t *testing.T) {
 	d.done([]string{"x"})
 	if err := d.wait(context.Background()); err != nil {
 		t.Fatalf("wait after the deletion = %v", err)
+	}
+}
+
+func TestLeftoverInstanceIsLoggedWithItsCause(t *testing.T) {
+	var buf bytes.Buffer
+	log := hclog.New(&hclog.LoggerOptions{Output: &buf, Level: hclog.Debug})
+	up := upFunc(context.Background(), config.Autoscaler{}, log, nil, nil, nil)
+	_ = up(nil, taskscaler.UpFuncInstance{ID: "vm-1", Cause: fleeting.CausePreexisted})
+	out := buf.String()
+	for _, want := range []string{"[WARN]", "leftover instance", "vm-1", string(fleeting.CausePreexisted)} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log %q lacks %q", out, want)
+		}
 	}
 }
