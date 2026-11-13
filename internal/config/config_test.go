@@ -94,6 +94,39 @@ func TestBareIntegerDurationIsRejected(t *testing.T) {
 	}
 }
 
+func TestNamePrefixUniqueness(t *testing.T) {
+	two := func(first, second string) string {
+		a := strings.Replace(valid, `address = "10.0.0.1"`, `address = "10.0.0.1"`+"\n    name_prefix = \""+first+"\"", 1)
+		b := strings.Replace(valid, `name = "example"`, `name = "other"`, 1)
+		b = strings.Replace(b, `address = "10.0.0.1"`, `address = "10.0.0.1"`+"\n    name_prefix = \""+second+"\"", 1)
+		return a + b[strings.Index(b, "[[scalesets]]"):]
+	}
+	tests := []struct {
+		name, first, second, want string
+	}{
+		{"duplicate rejected", "forgehand-", "forgehand-", `name_prefix "forgehand-" is already used by scale set`},
+		{"nested accepted", "forgehand-", "forgehand-tpm-", ""},
+		{"distinct accepted", "alpha-", "beta-", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Parse([]byte(two(tt.first, tt.second)))
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error %v does not contain %q", err, tt.want)
+			}
+			if !strings.Contains(err.Error(), `"example"`) || !strings.Contains(err.Error(), `"other"`) {
+				t.Errorf("error %q should name both scale sets", err)
+			}
+		})
+	}
+}
+
 func TestParseRejects(t *testing.T) {
 	tests := []struct {
 		name string
