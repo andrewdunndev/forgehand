@@ -35,7 +35,9 @@ dir = "/opt/actions-runner"
 [scalesets.autoscaler]
 # required: a fleeting plugin, as a binary path, a name on PATH or an OCI reference.
 plugin = "fleeting-plugin-libvirt"
-# required: the most VMs this scale set may hold at once.
+# required: the most VMs this scale set may hold at once. It counts this scale
+# set only: values add up across scale sets and gitlab-runner, and nothing caps
+# the host. For a host-wide cap, see the plugin's admit_command and resource_partition.
 max_instances = 4
 # Readiness gate. Run in the guest over SSH once it connects (the connection
 # retries until connector_config.timeout); a VM takes a job only after it exits 0.
@@ -45,7 +47,9 @@ instance_ready_command = "true"
 instance_acquire_timeout = "15m"
 
 # The keys here belong to the plugin; forgehand passes them through untouched.
-# Each scale set needs its own name_prefix. These are fleeting-plugin-libvirt's.
+# Each scale set needs its own name_prefix; forgehand rejects one another scale set
+# already uses. It must also differ from any gitlab-runner [[runners]] on the same
+# libvirt host, which forgehand cannot check. These are fleeting-plugin-libvirt's.
 [scalesets.autoscaler.plugin_config]
 pool_name = "images"
 base_volume_name = "golden.qcow2"

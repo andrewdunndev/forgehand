@@ -103,7 +103,7 @@ Hardware is plugin config that forgehand passes through untouched: `tpm` and `pc
 in `plugin_config`, one scale set per hardware class so `runs-on` selects it. A scale set with
 `pci_devices` sets `max_instances` at most the number of addresses. Each `pci_devices` scale set needs its own pool, disjoint from every other scale set's; overlap makes
 `max_instances` overstate capacity. The example config
-shows both, and the [plugin README](https://gitlab.com/dunn.dev/fleeting-plugin-libvirt) defines the keys. A passed-through device may keep state between jobs, so serve trusted repositories only; see the plugin README.
+shows both. forgehand rejects a `name_prefix` that another scale set already uses. It must also differ from any gitlab-runner `[[runners]]` on the same libvirt host, which forgehand cannot check. `max_instances` counts one scale set only: the values add up across scale sets and gitlab-runner, and nothing caps the host as a whole. For a host-wide cap, see the plugin's `admit_command` and `resource_partition`. The [plugin README](https://gitlab.com/dunn.dev/fleeting-plugin-libvirt) defines the keys. A passed-through device may keep state between jobs, so serve trusted repositories only; see the plugin README.
 
 ## Configuration keys
 

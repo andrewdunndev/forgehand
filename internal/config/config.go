@@ -217,6 +217,7 @@ func (c *Config) validate() error {
 	}
 
 	seen := map[string]bool{}
+	prefixOwner := map[string]string{}
 	for i := range c.ScaleSets {
 		s := &c.ScaleSets[i]
 		at := fmt.Sprintf("scalesets[%d]", i)
@@ -229,6 +230,13 @@ func (c *Config) validate() error {
 				fail("%s: duplicate scale set name; each [[scalesets]] name must be unique", at)
 			}
 			seen[s.Name] = true
+		}
+		if p, ok := s.Autoscaler.PluginConfig["name_prefix"].(string); ok && p != "" {
+			if other, dup := prefixOwner[p]; dup {
+				fail("%s: name_prefix %q is already used by scale set %s; the plugin tags VMs by prefix, so each scale set needs its own", at, p, other)
+			} else {
+				prefixOwner[p] = at
+			}
 		}
 	}
 	return errors.Join(errs...)
