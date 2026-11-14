@@ -5,6 +5,7 @@ import (
 	"errors"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/hashicorp/go-hclog"
 	"github.com/prometheus/client_golang/prometheus"
@@ -101,7 +102,10 @@ func TestReadyCommandFailureIsCounted(t *testing.T) {
 		t.Fatal(err)
 	}
 	up := upFunc(context.Background(), config.Autoscaler{InstanceReadyCommand: "true"}, hclog.NewNullLogger(), nil, nil, obs)
+	// fleeting treats a zero connect timeout as its ten minute default and
+	// retries, so a short one keeps the unreachable dial failing fast.
 	in := taskscaler.UpFuncInstance{ID: "i", Cause: fleeting.CauseRequested}
+	in.Info.Timeout = 100 * time.Millisecond
 	if err := up(nil, in); err == nil {
 		t.Fatal("a ready command with no address to reach must fail")
 	}
