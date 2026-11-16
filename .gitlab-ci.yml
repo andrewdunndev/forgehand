@@ -23,30 +23,30 @@ variables:
   GOFLAGS: -mod=readonly
 
 include:
-  - component: gitlab.com/dunn.dev/pipeline/go-lint@4.16.0
-  - component: gitlab.com/dunn.dev/pipeline/go-audit@4.16.0
-  - component: gitlab.com/dunn.dev/pipeline/reference-check@4.16.0
+  - component: gitlab.com/dunn.dev/pipeline/go-lint@4.16.1
+  - component: gitlab.com/dunn.dev/pipeline/go-audit@4.16.1
+  - component: gitlab.com/dunn.dev/pipeline/reference-check@4.16.1
     inputs:
       reference_ref: main
       fail_on_violation: true
-  - component: gitlab.com/dunn.dev/pipeline/go-build@4.16.0
+  - component: gitlab.com/dunn.dev/pipeline/go-build@4.16.1
     inputs:
       job_name: go-build
       binary_name: forgehand
       package_path: ./cmd/forgehand
-  - component: gitlab.com/dunn.dev/pipeline/go-release-binary@4.16.0
+  - component: gitlab.com/dunn.dev/pipeline/go-release-binary@4.16.1
     inputs:
       binary_name: forgehand
       package_path: ./cmd/forgehand
       package_name: forgehand
-  - component: gitlab.com/dunn.dev/pipeline/go-sbom@4.16.0
+  - component: gitlab.com/dunn.dev/pipeline/go-sbom@4.16.1
     inputs:
       package_name: forgehand
-  - component: gitlab.com/dunn.dev/pipeline/slsa-attest@4.16.0
-  - component: gitlab.com/dunn.dev/pipeline/release-create@4.16.0
+  - component: gitlab.com/dunn.dev/pipeline/slsa-attest@4.16.1
+  - component: gitlab.com/dunn.dev/pipeline/release-create@4.16.1
     inputs:
       package_name: forgehand
-  - component: gitlab.com/dunn.dev/pipeline/github-release@4.16.0
+  - component: gitlab.com/dunn.dev/pipeline/github-release@4.16.1
     inputs:
       github_repo: andrewdunndev/forgehand
 
@@ -66,7 +66,7 @@ audit:
 
 test:
   stage: test
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.16.0
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.16.1
   variables:
     GOMODCACHE: $CI_PROJECT_DIR/.gomodcache
     GOCACHE: $CI_PROJECT_DIR/.gocache
