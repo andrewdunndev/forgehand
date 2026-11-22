@@ -116,8 +116,8 @@ github.com/stretchr/testify v1.8.1/go.mod h1:w2LPCIKwWwSfY2zedu0+kehJoqGctiVI29o
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
 github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUmoNlxoYthg=
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
-gitlab.com/gitlab-org/fleeting/fleeting v0.0.0-20261102084746-4085ca1ae366 h1:pyTZbDTbNDbgWQe6VxNEFz4O32o1SI8J42F60h62Mgc=
-gitlab.com/gitlab-org/fleeting/fleeting v0.0.0-20261102084746-4085ca1ae366/go.mod h1:rJjOsf4EndnuqmRtVeV0lLFxLf18TBV/1ZUO6S4Hx4E=
+gitlab.com/gitlab-org/fleeting/fleeting v0.0.0-20261118095806-5cc162509056 h1:JWD9WvkIz/0gbAWpBQ9hEhbnmrI2HcrnRXuYBEmWgrk=
+gitlab.com/gitlab-org/fleeting/fleeting v0.0.0-20261118095806-5cc162509056/go.mod h1:O0Elm9J/To0efurcywk9NOZsESkxSbWT2UHntIiiMnc=
 gitlab.com/gitlab-org/fleeting/fleeting-artifact v0.0.0-20261028004323-4b6f2931bc9b h1:YWbYRkrZKpQfytrGXq3kagPIG80/lv9CITjtbVeY1AU=
 gitlab.com/gitlab-org/fleeting/fleeting-artifact v0.0.0-20261028004323-4b6f2931bc9b/go.mod h1:6cgyD5LogZinmU3k80JeMHwwFtIOp9VkAlCXoZG3HuU=
 gitlab.com/gitlab-org/fleeting/fleeting/metrics/prometheus v0.0.0-20261102084746-4085ca1ae366 h1:x34RRL9kkpqi8DwN2V3I7im9o6mMh4Adc0VvVYC8Qb8=
