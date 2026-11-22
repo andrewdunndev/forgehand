@@ -12,7 +12,7 @@ require (
 	gitlab.com/gitlab-org/fleeting/fleeting-artifact v0.0.0-20261117081921-96c18efedb75
 	gitlab.com/gitlab-org/fleeting/fleeting/metrics/prometheus v0.0.0-20261102084746-4085ca1ae366
 	gitlab.com/gitlab-org/fleeting/taskscaler v0.0.0-20261023025524-7db01026e442
-	gitlab.com/gitlab-org/fleeting/taskscaler/metrics/prometheus v0.0.0-20261023025524-7db01026e442
+	gitlab.com/gitlab-org/fleeting/taskscaler/metrics/prometheus v0.0.0-20261119082819-8781f3c5b786
 )
 
 require (
