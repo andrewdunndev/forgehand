@@ -8,7 +8,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/prometheus/client_golang v1.25.0
-	gitlab.com/gitlab-org/fleeting/fleeting v0.0.0-20261102084746-4085ca1ae366
+	gitlab.com/gitlab-org/fleeting/fleeting v0.0.0-20261118095806-5cc162509056
 	gitlab.com/gitlab-org/fleeting/fleeting-artifact v0.0.0-20261117081921-96c18efedb75
 	gitlab.com/gitlab-org/fleeting/fleeting/metrics/prometheus v0.0.0-20261102084746-4085ca1ae366
 	gitlab.com/gitlab-org/fleeting/taskscaler v0.0.0-20261023025524-7db01026e442
