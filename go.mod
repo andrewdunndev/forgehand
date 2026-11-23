@@ -8,11 +8,11 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-hclog v1.6.3
 	github.com/prometheus/client_golang v1.25.0
-	gitlab.com/gitlab-org/fleeting/fleeting v0.0.0-20261117120412-4bbb43a5aa23
-	gitlab.com/gitlab-org/fleeting/fleeting-artifact v0.0.0-20261028004323-4b6f2931bc9b
-	gitlab.com/gitlab-org/fleeting/fleeting/metrics/prometheus v0.0.0-20261102084746-4085ca1ae366
+	gitlab.com/gitlab-org/fleeting/fleeting v0.0.0-20261118095806-5cc162509056
+	gitlab.com/gitlab-org/fleeting/fleeting-artifact v0.0.0-20261117081921-96c18efedb75
+	gitlab.com/gitlab-org/fleeting/fleeting/metrics/prometheus v0.0.0-20261118095806-5cc162509056
 	gitlab.com/gitlab-org/fleeting/taskscaler v0.0.0-20261119082819-8781f3c5b786
-	gitlab.com/gitlab-org/fleeting/taskscaler/metrics/prometheus v0.0.0-20261023025524-7db01026e442
+	gitlab.com/gitlab-org/fleeting/taskscaler/metrics/prometheus v0.0.0-20261119082819-8781f3c5b786
 )
 
 require (
@@ -22,7 +22,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/platforms v0.2.1 // indirect
-	github.com/docker/cli v29.9.2+incompatible // indirect
+	github.com/docker/cli v29.9.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.3 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
@@ -52,7 +52,7 @@ require (
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	golang.org/x/crypto v0.59.0 // indirect
-	golang.org/x/mod v0.42.0 // indirect
+	golang.org/x/mod v0.43.0 // indirect
 	golang.org/x/net v0.62.0 // indirect
 	golang.org/x/sync v0.25.0 // indirect
 	golang.org/x/sys v0.50.0 // indirect
