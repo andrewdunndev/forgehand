@@ -18,8 +18,8 @@ github.com/containerd/platforms v0.2.1 h1:zvwtM3rz2YHPQsF2CHYM8+KtB5dvhISiXh5ZpS
 github.com/containerd/platforms v0.2.1/go.mod h1:XHCb+2/hzowdiut9rkudds9bE5yJ7npe7dG/wG+uFPw=
 github.com/davecgh/go-spew v1.1.0/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
 github.com/davecgh/go-spew v1.1.1/go.mod h1:J7Y8YcW2NihsgmVo/mv3lAwl/skON4iLHjSsI+c5H38=
-github.com/docker/cli v29.9.3+incompatible h1:SBaMp7ecohadEHMDrUJg22t9I3awqsAVhnJ7GOcWpfE=
-github.com/docker/cli v29.9.3+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
+github.com/docker/cli v29.10.0+incompatible h1:lCL+clBUJnHsmjBCr6TwvfQFkmBidPxi5SkuXCoYxc0=
+github.com/docker/cli v29.10.0+incompatible/go.mod h1:JLrzqnKDaYBop7H2jaqPtU4hHvMKP+vjCwu2uszcLI8=
 github.com/docker/docker-credential-helpers v0.9.3 h1:gAm/VtF9wgqJMoxzT3Gj5p4AqIjCBS4wrsOh9yRqcz8=
 github.com/docker/docker-credential-helpers v0.9.3/go.mod h1:x+4Gbw9aGmChi3qTLZj8Dfn0TD20M/fuWy0E5+WDeCo=
 github.com/fatih/color v1.13.0/go.mod h1:kLAiJbzzSOZDVNGyDpeOxJ47H46qBXwg5ILebYFFOfk=
@@ -118,8 +118,8 @@ github.com/stretchr/testify v1.12.1/go.mod h1:MDEgiDPPsNp5cuIrHPPCyornHKgEVbtFUm
 github.com/yuin/goldmark v1.4.13/go.mod h1:6yULJ656Px+3vBD8DxQVa3kxgyrAnzto9xy5taEt/CY=
 gitlab.com/gitlab-org/fleeting/fleeting v0.0.0-20261118095806-5cc162509056 h1:JWD9WvkIz/0gbAWpBQ9hEhbnmrI2HcrnRXuYBEmWgrk=
 gitlab.com/gitlab-org/fleeting/fleeting v0.0.0-20261118095806-5cc162509056/go.mod h1:O0Elm9J/To0efurcywk9NOZsESkxSbWT2UHntIiiMnc=
-gitlab.com/gitlab-org/fleeting/fleeting-artifact v0.0.0-20261117081921-96c18efedb75 h1:m7BY5LOy5scvRBTl8ybSZyfIleoPvZ+iSw+DgSkWiow=
-gitlab.com/gitlab-org/fleeting/fleeting-artifact v0.0.0-20261117081921-96c18efedb75/go.mod h1:TMmRpuT2YjoI3AkpSPvcoY/GdO0RrzysBfjbSRxzs3Y=
+gitlab.com/gitlab-org/fleeting/fleeting-artifact v0.0.0-20261123051406-ee0f525569db h1:uvXCmCiAYTRNft2O/p0tUla+9tD5uAVxlFhWw5tXnyQ=
+gitlab.com/gitlab-org/fleeting/fleeting-artifact v0.0.0-20261123051406-ee0f525569db/go.mod h1:5lparkfrw4VNjLdCtZV9XuxUDjLzgme2BvGutbynnjA=
 gitlab.com/gitlab-org/fleeting/fleeting/metrics/prometheus v0.0.0-20261118095806-5cc162509056 h1:C3/fyqPbecQhyPFvQmSag6XckEWJYmUhlJ/YEZFHdzk=
 gitlab.com/gitlab-org/fleeting/fleeting/metrics/prometheus v0.0.0-20261118095806-5cc162509056/go.mod h1:IskPn0vTJh87VlGFavIN43EmYAgafdz7AQI9bG3r45I=
 gitlab.com/gitlab-org/fleeting/taskscaler v0.0.0-20261119082819-8781f3c5b786 h1:19m/9buK/dbpjIL9MvTrvHVIs5+otssE+RenGLJkwQA=
