@@ -10,7 +10,7 @@ require (
 	github.com/prometheus/client_golang v1.25.0
 	gitlab.com/gitlab-org/fleeting/fleeting v0.0.0-20261126170042-cf3e52fa289d
 	gitlab.com/gitlab-org/fleeting/fleeting-artifact v0.0.0-20261123051406-ee0f525569db
-	gitlab.com/gitlab-org/fleeting/fleeting/metrics/prometheus v0.0.0-20261118095806-5cc162509056
+	gitlab.com/gitlab-org/fleeting/fleeting/metrics/prometheus v0.0.0-20261126170042-cf3e52fa289d
 	gitlab.com/gitlab-org/fleeting/taskscaler v0.0.0-20261119082819-8781f3c5b786
 	gitlab.com/gitlab-org/fleeting/taskscaler/metrics/prometheus v0.0.0-20261119082819-8781f3c5b786
 )
